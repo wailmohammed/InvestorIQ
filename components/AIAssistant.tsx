@@ -102,7 +102,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ portfolio, alerts = [], setAl
         value: Number(newAlertValue),
         active: true,
         triggered: false,
-        baselinePrice: currentPrice
+        baselinePrice: currentPrice // CAPTURE BASELINE PRICE HERE
       };
       setAlerts(prev => [...prev, newAlert]);
       setNewAlertTicker('');

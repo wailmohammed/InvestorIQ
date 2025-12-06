@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { UserProfile, PlanTier, UserRole, Brokerage, CryptoWallet } from '../types';
-import { Users, DollarSign, Activity, Search, Shield, Trash2, Edit2, CheckCircle, XCircle, Globe, Wallet, Plus, Monitor } from 'lucide-react';
+import { UserProfile, PlanTier, UserRole, Brokerage, CryptoWallet, PlanConfig, Promotion } from '../types';
+import { Users, DollarSign, Activity, Search, Shield, Trash2, Edit2, CheckCircle, XCircle, Globe, Wallet, Plus, Monitor, CreditCard, Tag } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface AdminDashboardProps {
@@ -10,6 +10,10 @@ interface AdminDashboardProps {
   setBrokerages: React.Dispatch<React.SetStateAction<Brokerage[]>>;
   wallets: CryptoWallet[];
   setWallets: React.Dispatch<React.SetStateAction<CryptoWallet[]>>;
+  plans?: PlanConfig[];
+  setPlans?: React.Dispatch<React.SetStateAction<PlanConfig[]>>;
+  promotions?: Promotion[];
+  setPromotions?: React.Dispatch<React.SetStateAction<Promotion[]>>;
 }
 
 // Mock Data
@@ -30,8 +34,18 @@ const REVENUE_DATA = [
   { name: 'Jun', amount: 8200 },
 ];
 
-const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, brokerages, setBrokerages, wallets, setWallets }) => {
-  const [activeTab, setActiveTab] = useState<'USERS' | 'BROKERAGES' | 'PAYMENTS'>('USERS');
+const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
+  currentUser, 
+  brokerages, 
+  setBrokerages, 
+  wallets, 
+  setWallets,
+  plans,
+  setPlans,
+  promotions,
+  setPromotions
+}) => {
+  const [activeTab, setActiveTab] = useState<'USERS' | 'BROKERAGES' | 'PAYMENTS' | 'SUBSCRIPTIONS'>('USERS');
   const [users, setUsers] = useState<UserProfile[]>(MOCK_USERS);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -42,6 +56,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, brokerages
   const [newWalletLabel, setNewWalletLabel] = useState('');
   const [newWalletAddress, setNewWalletAddress] = useState('');
   const [newWalletNetwork, setNewWalletNetwork] = useState('');
+
+  // Promotion State
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoDiscount, setNewPromoDiscount] = useState('');
+  const [newPromoExpiry, setNewPromoExpiry] = useState('');
 
   const handleDeleteUser = (id: string) => {
     if (confirm('Are you sure you want to delete this user?')) {
@@ -93,6 +112,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, brokerages
      setWallets(wallets.filter(w => w.id !== id));
   };
 
+  const handleUpdatePlan = (planId: PlanTier, field: keyof PlanConfig, value: any) => {
+    if (setPlans && plans) {
+      setPlans(plans.map(p => p.id === planId ? { ...p, [field]: value } : p));
+    }
+  };
+
+  const handleAddPromotion = () => {
+    if (setPromotions && promotions && newPromoCode && newPromoDiscount) {
+      setPromotions([...promotions, {
+        id: Date.now().toString(),
+        code: newPromoCode.toUpperCase(),
+        discountPercent: Number(newPromoDiscount),
+        expiryDate: newPromoExpiry || '2025-12-31',
+        active: true
+      }]);
+      setNewPromoCode('');
+      setNewPromoDiscount('');
+      setNewPromoExpiry('');
+    }
+  };
+
+  const handleDeletePromotion = (id: string) => {
+    if (setPromotions && promotions) {
+      setPromotions(promotions.filter(p => p.id !== id));
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
       <div className="flex justify-between items-end">
@@ -106,26 +152,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, brokerages
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-4 border-b border-slate-200">
+      <div className="flex gap-4 border-b border-slate-200 overflow-x-auto">
          <button 
            onClick={() => setActiveTab('USERS')}
-           className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'USERS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+           className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'USERS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
          >
            User Management
          </button>
          <button 
            onClick={() => setActiveTab('BROKERAGES')}
-           className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'BROKERAGES' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+           className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'BROKERAGES' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
          >
            Brokerage Integrations
          </button>
          {currentUser.role === UserRole.SUPER_ADMIN && (
-           <button 
-             onClick={() => setActiveTab('PAYMENTS')}
-             className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'PAYMENTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-           >
-             Payment Systems
-           </button>
+           <>
+             <button 
+               onClick={() => setActiveTab('PAYMENTS')}
+               className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'PAYMENTS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+             >
+               Payment Systems
+             </button>
+             <button 
+               onClick={() => setActiveTab('SUBSCRIPTIONS')}
+               className={`pb-3 px-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'SUBSCRIPTIONS' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+             >
+               Plans & Promotions
+             </button>
+           </>
          )}
       </div>
 
@@ -305,6 +359,92 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentUser, brokerages
               </div>
             </div>
          </div>
+      )}
+
+      {activeTab === 'SUBSCRIPTIONS' && currentUser.role === UserRole.SUPER_ADMIN && plans && promotions && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+          {/* Plan Configuration */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><CreditCard size={20}/> Plan Configuration</h3>
+            <div className="space-y-4">
+              {plans.map(plan => (
+                <div key={plan.id} className="p-4 border border-slate-200 rounded-xl bg-slate-50">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-bold text-slate-800">{plan.name}</h4>
+                    <span className="text-xs bg-slate-200 px-2 py-0.5 rounded">{plan.id}</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-slate-500 font-semibold block mb-1">Monthly Price ($)</label>
+                      <input 
+                        type="number"
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
+                        value={plan.price}
+                        onChange={(e) => handleUpdatePlan(plan.id, 'price', Number(e.target.value))}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-slate-500 font-semibold block mb-1">Trial Days</label>
+                      <input 
+                        type="number"
+                        className="w-full border border-slate-300 rounded px-2 py-1 text-sm"
+                        value={plan.trialDays}
+                        onChange={(e) => handleUpdatePlan(plan.id, 'trialDays', Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Promotions */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Tag size={20}/> Promotions</h3>
+            
+            <div className="space-y-3 mb-6">
+               {promotions.map(promo => (
+                 <div key={promo.id} className="flex justify-between items-center p-3 border border-slate-100 rounded-lg bg-green-50/50">
+                    <div>
+                       <div className="font-bold text-green-700 font-mono tracking-wide">{promo.code}</div>
+                       <div className="text-xs text-slate-500">{promo.discountPercent}% OFF • Expires {promo.expiryDate}</div>
+                    </div>
+                    <button onClick={() => handleDeletePromotion(promo.id)} className="text-slate-400 hover:text-red-500">
+                      <Trash2 size={16} />
+                    </button>
+                 </div>
+               ))}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100">
+               <h4 className="text-sm font-bold text-slate-700 mb-2">Create New Code</h4>
+               <div className="grid grid-cols-2 gap-2 mb-2">
+                  <input 
+                    placeholder="Code (e.g. SAVE10)" 
+                    className="border rounded px-3 py-2 text-sm uppercase"
+                    value={newPromoCode}
+                    onChange={e => setNewPromoCode(e.target.value)}
+                  />
+                  <input 
+                    type="number"
+                    placeholder="Discount %" 
+                    className="border rounded px-3 py-2 text-sm"
+                    value={newPromoDiscount}
+                    onChange={e => setNewPromoDiscount(e.target.value)}
+                  />
+                  <input 
+                    type="date"
+                    className="border rounded px-3 py-2 text-sm col-span-2"
+                    value={newPromoExpiry}
+                    onChange={e => setNewPromoExpiry(e.target.value)}
+                  />
+               </div>
+               <button onClick={handleAddPromotion} className="w-full bg-slate-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800">
+                 Create Promotion
+               </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { MONTHLY_DIVIDENDS_DATA } from '../constants';
 import { Portfolio, Holding } from '../types';
-import { ShieldCheck, ShieldAlert, RefreshCw, Settings2 } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, RefreshCw, Settings2, TrendingUp } from 'lucide-react';
 
 interface DividendAnalyticsProps {
   portfolio: Portfolio;
@@ -17,49 +17,54 @@ const DividendAnalytics: React.FC<DividendAnalyticsProps> = ({ portfolio, onUpda
   // Advanced Snowball Calculation
   const snowballData = useMemo(() => {
     const data = [];
-    
-    // Deep clone holdings to simulate future state without mutating original props
-    let simulatedHoldings = portfolio.holdings.map(h => ({
-      ...h,
-      simulatedShares: h.shares,
-      simulatedPrice: h.stock.price,
-      simulatedDividendPerShare: h.stock.price * (h.stock.dividendYield / 100)
-    }));
-
     const years = 15;
     const divGrowth = dividendGrowthRate / 100;
     const priceGrowth = priceAppreciationRate / 100;
 
+    // We need to simulate the state year by year.
+    // Clone holdings to maintain local simulation state
+    let simulatedHoldings = portfolio.holdings.map(h => ({
+      ...h,
+      simulatedShares: h.shares,
+      simulatedPrice: h.stock.price,
+      // Initial annual dividend per share
+      simulatedDividendPerShare: h.stock.price * (h.stock.dividendYield / 100)
+    }));
+
+    // Start with Year 0 (Current)
     for(let i = 0; i <= years; i++) {
       let annualDripIncome = 0;
       let annualCashIncome = 0;
       let currentYearPortfolioValue = 0;
 
-      // 1. Calculate Income and Value for the CURRENT year state
+      // 1. Calculate Income and Value for this year based on current simulation state
       simulatedHoldings.forEach(h => {
-        // Current Dividend for this year
+        // Dividend for this year = Shares * Div/Share
         const totalDividend = h.simulatedShares * h.simulatedDividendPerShare;
         
-        // Calculate holding value at current simulated price
+        // Value = Shares * Price
         currentYearPortfolioValue += h.simulatedShares * h.simulatedPrice;
 
         if (h.dripEnabled) {
           annualDripIncome += totalDividend;
-          // DRIP SIMULATION: 
-          // Reinvest dividends to buy fractional shares immediately at current simulated price
-          const newShares = totalDividend / h.simulatedPrice;
-          h.simulatedShares += newShares; // Compounding shares for NEXT year's calculation
+          // DRIP LOGIC:
+          // Reinvest the total dividend to buy more shares at the CURRENT price.
+          if (h.simulatedPrice > 0) {
+            const newShares = totalDividend / h.simulatedPrice;
+            // Add these shares. They will contribute to income NEXT year.
+            h.simulatedShares += newShares; 
+          }
         } else {
           annualCashIncome += totalDividend;
         }
 
-        // 2. Grow Stock Price and Dividend Rate for NEXT year
+        // 2. Advance Stock Price and Dividend Rate for NEXT year
         h.simulatedPrice = h.simulatedPrice * (1 + priceGrowth);
         h.simulatedDividendPerShare = h.simulatedDividendPerShare * (1 + divGrowth);
       });
 
-      // Baseline Calculation (No DRIP, No Reinvestment) for comparison
-      // This estimates what income would be if shares remained constant
+      // Baseline Calculation (No DRIP ever)
+      // Original Shares * (Orig Price * Orig Yield * GrowthFactor)
       const baselineIncome = portfolio.holdings.reduce((acc, h) => 
           acc + (h.shares * (h.stock.price * (h.stock.dividendYield / 100) * Math.pow(1 + divGrowth, i)))
       , 0);
@@ -105,34 +110,35 @@ const DividendAnalytics: React.FC<DividendAnalyticsProps> = ({ portfolio, onUpda
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                <div>
-                  <h3 className="text-lg font-bold text-slate-900 mb-2">The Snowball Effect (15 Years)</h3>
-                  <p className="text-sm text-slate-500">Projected income with DRIP & Compounding.</p>
+                  <h3 className="text-lg font-bold text-slate-900 mb-1">The Snowball Effect</h3>
+                  <p className="text-sm text-slate-500">15-Year Projection with DRIP.</p>
                </div>
-               <div className="flex gap-2 text-xs">
-                  <div className="flex flex-col items-end">
-                     <span className="text-slate-500 font-semibold">Div Growth</span>
-                     <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                        <Settings2 size={10} className="text-slate-400"/>
+               
+               <div className="flex flex-wrap gap-4 text-xs bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <div className="flex flex-col gap-1">
+                     <span className="text-slate-500 font-semibold flex items-center gap-1"><TrendingUp size={10}/> Div Growth Rate</span>
+                     <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm w-24">
                         <input 
                            type="number" 
                            value={dividendGrowthRate} 
                            onChange={(e) => setDividendGrowthRate(Number(e.target.value))}
-                           className="w-8 bg-transparent text-right focus:outline-none font-bold text-blue-600"
-                        />%
+                           className="w-full bg-transparent text-right focus:outline-none font-bold text-blue-600"
+                        />
+                        <span>%</span>
                      </div>
                   </div>
-                  <div className="flex flex-col items-end">
-                     <span className="text-slate-500 font-semibold">Appreciation</span>
-                     <div className="flex items-center gap-1 bg-slate-50 px-2 py-1 rounded border border-slate-200">
-                        <Settings2 size={10} className="text-slate-400"/>
+                  <div className="flex flex-col gap-1">
+                     <span className="text-slate-500 font-semibold flex items-center gap-1"><TrendingUp size={10}/> Price Appreciation</span>
+                     <div className="flex items-center gap-1 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm w-24">
                         <input 
                            type="number" 
                            value={priceAppreciationRate} 
                            onChange={(e) => setPriceAppreciationRate(Number(e.target.value))}
-                           className="w-8 bg-transparent text-right focus:outline-none font-bold text-purple-600"
-                        />%
+                           className="w-full bg-transparent text-right focus:outline-none font-bold text-purple-600"
+                        />
+                        <span>%</span>
                      </div>
                   </div>
                </div>

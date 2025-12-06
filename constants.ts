@@ -1,5 +1,5 @@
 
-import { Holding, Portfolio, SocialPost, Stock, Brokerage, CryptoWallet, PlanTier } from './types';
+import { Holding, Portfolio, SocialPost, Stock, Brokerage, CryptoWallet, PlanTier, PlanConfig, Promotion } from './types';
 
 export const MOCK_STOCKS: Record<string, Stock> = {
   AAPL: { ticker: 'AAPL', name: 'Apple Inc.', sector: 'Technology', price: 185.92, dividendYield: 0.52, dividendFrequency: 'Quarterly', logoUrl: 'https://logo.clearbit.com/apple.com', dividendSafetyScore: 99 },
@@ -87,3 +87,33 @@ export const PLAN_LIMITS = {
   [PlanTier.PRO]: { maxHoldings: 50, maxPortfolios: 3, allowApi: true },
   [PlanTier.ELITE]: { maxHoldings: 9999, maxPortfolios: 10, allowApi: true },
 };
+
+export const INITIAL_PLANS: PlanConfig[] = [
+  {
+    id: PlanTier.FREE,
+    name: 'Starter',
+    price: 0,
+    trialDays: 0,
+    features: ['Basic Portfolio Tracking', 'Manual Entry', 'Community Access', 'Limited AI Insights'],
+  },
+  {
+    id: PlanTier.PRO,
+    name: 'Pro',
+    price: 10,
+    trialDays: 7,
+    features: ['Unlimited Portfolios', 'Auto-Import (API/CSV)', 'Advanced Analytics', 'Full AI Advisor Access', 'Dividend Projections'],
+    popular: true,
+  },
+  {
+    id: PlanTier.ELITE,
+    name: 'Elite',
+    price: 25,
+    trialDays: 14,
+    features: ['Priority Support', 'Tax Reporting', 'Multiple Users', 'API Access', 'Custom Alerts & Reports', '1-on-1 Strategy Calls'],
+  },
+];
+
+export const INITIAL_PROMOTIONS: Promotion[] = [
+  { id: '1', code: 'WELCOME20', discountPercent: 20, expiryDate: '2025-12-31', active: true },
+  { id: '2', code: 'STUDENT50', discountPercent: 50, expiryDate: '2025-12-31', active: true },
+];

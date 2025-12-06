@@ -9,10 +9,11 @@ import AIAssistant from './components/AIAssistant';
 import Auth from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
 import Billing from './components/Billing';
-import { ViewState, Portfolio as PortfolioType, Holding, Alert, Notification, PlanTier, UserProfile, Brokerage, CryptoWallet, PortfolioContainer } from './types';
-import { INITIAL_HOLDINGS, MOCK_STOCKS, DEFAULT_BROKERAGES, DEFAULT_WALLETS, PLAN_LIMITS } from './constants';
-import { Bell, Search, Settings, Shield, X, Check, Menu, Plus } from 'lucide-react';
+import { ViewState, Portfolio as PortfolioType, Holding, Alert, Notification, PlanTier, UserProfile, Brokerage, CryptoWallet, PortfolioContainer, PlanConfig, Promotion } from './types';
+import { INITIAL_HOLDINGS, MOCK_STOCKS, DEFAULT_BROKERAGES, DEFAULT_WALLETS, PLAN_LIMITS, INITIAL_PLANS, INITIAL_PROMOTIONS } from './constants';
+import { Bell, Search, Settings, Shield, X, Check, Menu, Plus, RefreshCw, Loader2 } from 'lucide-react';
 import { supabase } from './supabaseClient'; 
+import { fetchLivePrices } from './services/marketData';
 
 const App: React.FC = () => {
   // Auth State
@@ -26,14 +27,17 @@ const App: React.FC = () => {
   ]);
   const [activePortfolioId, setActivePortfolioId] = useState<string>('1');
 
+  // Global App Config (Super Admin Editable)
+  const [plans, setPlans] = useState<PlanConfig[]>(INITIAL_PLANS);
+  const [promotions, setPromotions] = useState<Promotion[]>(INITIAL_PROMOTIONS);
+  const [brokerages, setBrokerages] = useState<Brokerage[]>(DEFAULT_BROKERAGES);
+  const [wallets, setWallets] = useState<CryptoWallet[]>(DEFAULT_WALLETS);
+
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-  // Global Config State (Managed by Admin)
-  const [brokerages, setBrokerages] = useState<Brokerage[]>(DEFAULT_BROKERAGES);
-  const [wallets, setWallets] = useState<CryptoWallet[]>(DEFAULT_WALLETS);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Initial Auth Check (Simulated)
   useEffect(() => {
@@ -63,6 +67,24 @@ const App: React.FC = () => {
     setActivePortfolioId(newId);
   };
 
+  const handleRenamePortfolio = (id: string, newName: string) => {
+    setPortfolios(prev => prev.map(p => p.id === id ? { ...p, name: newName } : p));
+  };
+
+  const handleDeletePortfolio = (id: string) => {
+    if (portfolios.length <= 1) {
+      alert("You must have at least one portfolio.");
+      return;
+    }
+    if (confirm("Are you sure you want to delete this portfolio? This cannot be undone.")) {
+       const newPortfolios = portfolios.filter(p => p.id !== id);
+       setPortfolios(newPortfolios);
+       if (activePortfolioId === id) {
+         setActivePortfolioId(newPortfolios[0].id);
+       }
+    }
+  };
+
   // Get Active Portfolio Data
   const activePortfolioContainer = portfolios.find(p => p.id === activePortfolioId) || portfolios[0];
   const activeHoldings = activePortfolioContainer.holdings;
@@ -81,6 +103,48 @@ const App: React.FC = () => {
     };
   }, [activeHoldings]);
 
+  // LIVE DATA: Refresh prices
+  const refreshMarketData = async () => {
+    if (!user) return;
+    setIsRefreshing(true);
+    
+    // Collect all tickers from all portfolios
+    const allTickers = Array.from(new Set(portfolios.flatMap(p => p.holdings.map(h => h.stock.ticker)))) as string[];
+    
+    if (allTickers.length === 0) {
+        setIsRefreshing(false);
+        return;
+    }
+
+    const livePrices = await fetchLivePrices(allTickers);
+    
+    setPortfolios(prev => prev.map(port => ({
+        ...port,
+        holdings: port.holdings.map(h => {
+            const newPrice = livePrices[h.stock.ticker];
+            if (newPrice) {
+                return {
+                    ...h,
+                    stock: { ...h.stock, price: newPrice },
+                    equity: h.shares * newPrice,
+                    totalReturn: (newPrice - h.avgCost) * h.shares,
+                    totalReturnPercent: h.avgCost > 0 ? ((newPrice - h.avgCost) / h.avgCost) * 100 : 0
+                };
+            }
+            return h;
+        })
+    })));
+    
+    setIsRefreshing(false);
+  };
+
+  // Initial Data Fetch on Login
+  useEffect(() => {
+    if (user) {
+        refreshMarketData();
+    }
+  }, [user]);
+
   // Backend Logic Simulation: Alert Checking
   useEffect(() => {
     if (!user) return; 
@@ -93,30 +157,32 @@ const App: React.FC = () => {
         const updatedAlerts = prevAlerts.map(alert => {
           if (!alert.active || alert.triggered) return alert;
 
-          // Check against all holdings in the active portfolio
+          // Check against all holdings in the active portfolio or Mock Data
           const stock = activeHoldings.find(h => h.stock.ticker === alert.ticker)?.stock || MOCK_STOCKS[alert.ticker];
           
           if (!stock) return alert;
 
-          const fluctuation = (Math.random() * 0.06) - 0.03; 
-          const simulatedPrice = stock.price * (1 + fluctuation);
+          // Using the current price in state (which is updated by refreshMarketData or default)
+          const currentPrice = stock.price;
 
           let triggered = false;
           let triggerMsg = '';
 
-          if (alert.condition === 'ABOVE' && simulatedPrice >= alert.value) {
+          if (alert.condition === 'ABOVE' && currentPrice >= alert.value) {
             triggered = true;
             triggerMsg = `Price rose above $${alert.value}`;
           }
-          if (alert.condition === 'BELOW' && simulatedPrice <= alert.value) {
+          if (alert.condition === 'BELOW' && currentPrice <= alert.value) {
             triggered = true;
             triggerMsg = `Price fell below $${alert.value}`;
           }
           if (alert.condition === 'CHANGE_PCT' && alert.baselinePrice) {
-             const pctChange = Math.abs((simulatedPrice - alert.baselinePrice) / alert.baselinePrice) * 100;
-             if (pctChange >= alert.value) {
+             const pctChange = ((currentPrice - alert.baselinePrice) / alert.baselinePrice) * 100;
+             // Check absolute change magnitude
+             if (Math.abs(pctChange) >= alert.value) {
                 triggered = true;
-                triggerMsg = `Price moved by ${pctChange.toFixed(2)}% (Target: ${alert.value}%)`;
+                const direction = pctChange > 0 ? 'up' : 'down';
+                triggerMsg = `Price moved ${direction} by ${Math.abs(pctChange).toFixed(2)}% (Threshold: ${alert.value}%)`;
              }
           }
           
@@ -125,7 +191,7 @@ const App: React.FC = () => {
             newNotifications.push({
               id: Date.now().toString(),
               title: `Price Alert: ${alert.ticker}`,
-              message: `${alert.ticker}: ${triggerMsg}. Current: $${simulatedPrice.toFixed(2)}`,
+              message: `${alert.ticker}: ${triggerMsg}. Current: $${currentPrice.toFixed(2)}`,
               timestamp: new Date(),
               read: false,
               type: 'ALERT'
@@ -143,7 +209,12 @@ const App: React.FC = () => {
       });
     };
 
-    const intervalId = setInterval(checkAlerts, 10000); 
+    // Run check every 10 seconds to simulate backend job
+    const intervalId = setInterval(() => {
+        checkAlerts();
+        // Also refresh live prices periodically
+        refreshMarketData();
+    }, 15000); 
     return () => clearInterval(intervalId);
   }, [activeHoldings, user]);
 
@@ -152,7 +223,7 @@ const App: React.FC = () => {
       ticker,
       name: ticker,
       sector: 'Unknown',
-      price: avgCost, 
+      price: avgCost, // Fallback to cost if unknown
       dividendYield: 0,
       dividendFrequency: 'Quarterly',
     };
@@ -171,10 +242,72 @@ const App: React.FC = () => {
     // Update the active portfolio
     setPortfolios(prev => prev.map(p => {
       if (p.id === activePortfolioId) {
+        // Check if holding exists, if so update it
+        const existing = p.holdings.find(h => h.stock.ticker === ticker);
+        if (existing) {
+          const totalShares = existing.shares + shares;
+          const totalCost = (existing.shares * existing.avgCost) + (shares * avgCost);
+          const newAvgCost = totalCost / totalShares;
+          
+          return {
+            ...p,
+            holdings: p.holdings.map(h => h.stock.ticker === ticker ? {
+              ...h,
+              shares: totalShares,
+              avgCost: newAvgCost,
+              equity: totalShares * h.stock.price,
+              totalReturn: (h.stock.price - newAvgCost) * totalShares,
+              totalReturnPercent: ((h.stock.price - newAvgCost) / newAvgCost) * 100
+            } : h)
+          };
+        }
         return { ...p, holdings: [...p.holdings, newHolding] };
       }
       return p;
     }));
+    
+    // Trigger price refresh for new holding
+    setTimeout(refreshMarketData, 500);
+  };
+
+  const handleEditHolding = (ticker: string, shares: number, avgCost: number) => {
+    setPortfolios(prev => prev.map(p => {
+      if (p.id === activePortfolioId) {
+        return {
+          ...p,
+          holdings: p.holdings.map(h => {
+            if (h.stock.ticker === ticker) {
+               // Recalculate metrics based on new inputs
+               const equity = shares * h.stock.price;
+               const totalReturn = (h.stock.price - avgCost) * shares;
+               const totalReturnPercent = avgCost > 0 ? ((h.stock.price - avgCost) / avgCost) * 100 : 0;
+               
+               return {
+                 ...h,
+                 shares,
+                 avgCost,
+                 equity,
+                 totalReturn,
+                 totalReturnPercent
+               };
+            }
+            return h;
+          })
+        };
+      }
+      return p;
+    }));
+  };
+
+  const handleDeleteHolding = (ticker: string) => {
+    if (confirm(`Are you sure you want to remove ${ticker} from this portfolio?`)) {
+      setPortfolios(prev => prev.map(p => {
+        if (p.id === activePortfolioId) {
+          return { ...p, holdings: p.holdings.filter(h => h.stock.ticker !== ticker) };
+        }
+        return p;
+      }));
+    }
   };
 
   const handleUpdateHolding = (ticker: string, updates: Partial<Holding>) => {
@@ -205,7 +338,11 @@ const App: React.FC = () => {
             activePortfolioId={activePortfolioId}
             setActivePortfolioId={setActivePortfolioId}
             onCreatePortfolio={handleCreatePortfolio}
-            onAddHolding={handleAddHolding} 
+            onRenamePortfolio={handleRenamePortfolio}
+            onDeletePortfolio={handleDeletePortfolio}
+            onAddHolding={handleAddHolding}
+            onEditHolding={handleEditHolding}
+            onDeleteHolding={handleDeleteHolding}
             brokerages={brokerages} 
             setBrokerages={setBrokerages}
             user={user}
@@ -225,10 +362,22 @@ const App: React.FC = () => {
             setBrokerages={setBrokerages}
             wallets={wallets}
             setWallets={setWallets}
+            plans={plans}
+            setPlans={setPlans}
+            promotions={promotions}
+            setPromotions={setPromotions}
           />
         ) : null;
       case ViewState.BILLING:
-        return user ? <Billing user={user} onUpdatePlan={(plan) => setUser({...user, plan})} /> : null;
+      case ViewState.SETTINGS: // Using Billing as Settings for now
+        return user ? (
+          <Billing 
+            user={user} 
+            onUpdatePlan={(plan) => setUser({...user, plan})} 
+            plans={plans}
+            promotions={promotions}
+          /> 
+        ) : null;
       default:
         return <Dashboard portfolio={portfolio} />;
     }
@@ -267,6 +416,16 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-3 relative">
+             {/* Refresh Data Button */}
+             <button 
+               onClick={refreshMarketData}
+               title="Refresh Market Data"
+               disabled={isRefreshing}
+               className={`p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all text-slate-500 ${isRefreshing ? 'opacity-50' : ''}`}
+             >
+               <RefreshCw size={20} className={isRefreshing ? 'animate-spin' : ''} />
+             </button>
+
              <div className="relative">
                <button 
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
@@ -315,7 +474,7 @@ const App: React.FC = () => {
              </div>
 
              <button 
-               onClick={() => setCurrentView(ViewState.BILLING)}
+               onClick={() => setCurrentView(ViewState.SETTINGS)}
                className="p-2 text-slate-500 hover:bg-white hover:shadow-sm rounded-lg transition-all"
              >
                <Settings size={20} />

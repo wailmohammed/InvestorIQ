@@ -89,6 +89,23 @@ export enum PlanTier {
   ELITE = 'ELITE'
 }
 
+export interface PlanConfig {
+  id: PlanTier;
+  name: string;
+  price: number;
+  trialDays: number;
+  features: string[];
+  popular?: boolean;
+}
+
+export interface Promotion {
+  id: string;
+  code: string;
+  discountPercent: number;
+  expiryDate: string;
+  active: boolean;
+}
+
 export enum UserRole {
   USER = 'USER',
   ADMIN = 'ADMIN',
