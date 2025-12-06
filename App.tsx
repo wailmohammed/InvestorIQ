@@ -9,9 +9,9 @@ import AIAssistant from './components/AIAssistant';
 import Auth from './components/Auth';
 import AdminDashboard from './components/AdminDashboard';
 import Billing from './components/Billing';
-import { ViewState, Portfolio as PortfolioType, Holding, Alert, Notification, PlanTier, UserProfile, Brokerage, CryptoWallet } from './types';
-import { INITIAL_HOLDINGS, MOCK_STOCKS, DEFAULT_BROKERAGES, DEFAULT_WALLETS } from './constants';
-import { Bell, Search, Settings, Shield, X, Check, Menu } from 'lucide-react';
+import { ViewState, Portfolio as PortfolioType, Holding, Alert, Notification, PlanTier, UserProfile, Brokerage, CryptoWallet, PortfolioContainer } from './types';
+import { INITIAL_HOLDINGS, MOCK_STOCKS, DEFAULT_BROKERAGES, DEFAULT_WALLETS, PLAN_LIMITS } from './constants';
+import { Bell, Search, Settings, Shield, X, Check, Menu, Plus } from 'lucide-react';
 import { supabase } from './supabaseClient'; 
 
 const App: React.FC = () => {
@@ -19,7 +19,13 @@ const App: React.FC = () => {
   const [user, setUser] = useState<UserProfile | null>(null);
 
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
-  const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
+  
+  // Multi-Portfolio State
+  const [portfolios, setPortfolios] = useState<PortfolioContainer[]>([
+    { id: '1', name: 'Main Portfolio', holdings: INITIAL_HOLDINGS, isDefault: true }
+  ]);
+  const [activePortfolioId, setActivePortfolioId] = useState<string>('1');
+
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -32,7 +38,6 @@ const App: React.FC = () => {
   // Initial Auth Check (Simulated)
   useEffect(() => {
     // In a real app, check supabase.auth.getSession() here
-    // For now, we start logged out to show the login screen
   }, []);
 
   const handleLogin = (loggedInUser: UserProfile) => {
@@ -45,23 +50,40 @@ const App: React.FC = () => {
     setCurrentView(ViewState.AUTH);
   };
 
-  // Portfolio State (Calculated from holdings)
+  // Create New Portfolio
+  const handleCreatePortfolio = (name: string) => {
+    if (!user) return;
+    const limit = PLAN_LIMITS[user.plan].maxPortfolios;
+    if (portfolios.length >= limit) {
+      alert(`Upgrade to create more portfolios. Current limit: ${limit}`);
+      return;
+    }
+    const newId = Date.now().toString();
+    setPortfolios([...portfolios, { id: newId, name, holdings: [], isDefault: false }]);
+    setActivePortfolioId(newId);
+  };
+
+  // Get Active Portfolio Data
+  const activePortfolioContainer = portfolios.find(p => p.id === activePortfolioId) || portfolios[0];
+  const activeHoldings = activePortfolioContainer.holdings;
+
+  // Computed Portfolio Stats
   const portfolio: PortfolioType = useMemo(() => {
-    const totalValue = holdings.reduce((acc, h) => acc + h.equity, 0);
-    const totalDividendIncome = holdings.reduce((acc, h) => acc + (h.shares * h.stock.price * (h.stock.dividendYield / 100)), 0);
+    const totalValue = activeHoldings.reduce((acc, h) => acc + h.equity, 0);
+    const totalDividendIncome = activeHoldings.reduce((acc, h) => acc + (h.shares * h.stock.price * (h.stock.dividendYield / 100)), 0);
     const dividendYield = totalValue > 0 ? (totalDividendIncome / totalValue) * 100 : 0;
     
     return {
-      holdings: holdings,
+      holdings: activeHoldings,
       totalValue,
       totalDividendIncome,
       dividendYield
     };
-  }, [holdings]);
+  }, [activeHoldings]);
 
   // Backend Logic Simulation: Alert Checking
   useEffect(() => {
-    if (!user) return; // Only run if user is logged in
+    if (!user) return; 
 
     const checkAlerts = () => {
       setAlerts(prevAlerts => {
@@ -71,11 +93,11 @@ const App: React.FC = () => {
         const updatedAlerts = prevAlerts.map(alert => {
           if (!alert.active || alert.triggered) return alert;
 
-          const stock = holdings.find(h => h.stock.ticker === alert.ticker)?.stock || MOCK_STOCKS[alert.ticker];
+          // Check against all holdings in the active portfolio
+          const stock = activeHoldings.find(h => h.stock.ticker === alert.ticker)?.stock || MOCK_STOCKS[alert.ticker];
           
           if (!stock) return alert;
 
-          // Simulate live price fluctuation for demo purposes (+/- 3% range to trigger alerts easily)
           const fluctuation = (Math.random() * 0.06) - 0.03; 
           const simulatedPrice = stock.price * (1 + fluctuation);
 
@@ -121,16 +143,16 @@ const App: React.FC = () => {
       });
     };
 
-    const intervalId = setInterval(checkAlerts, 10000); // Check every 10 seconds
+    const intervalId = setInterval(checkAlerts, 10000); 
     return () => clearInterval(intervalId);
-  }, [holdings, user]); // Removed 'alerts' from dependency array to avoid infinite loops, relying on functional state update
+  }, [activeHoldings, user]);
 
   const handleAddHolding = (ticker: string, shares: number, avgCost: number) => {
     const stock = MOCK_STOCKS[ticker] || {
       ticker,
       name: ticker,
       sector: 'Unknown',
-      price: avgCost, // Assume market price is close to cost if unknown
+      price: avgCost, 
       dividendYield: 0,
       dividendFrequency: 'Quarterly',
     };
@@ -146,13 +168,25 @@ const App: React.FC = () => {
       targetAllocation: 0
     };
 
-    setHoldings(prev => [...prev, newHolding]);
+    // Update the active portfolio
+    setPortfolios(prev => prev.map(p => {
+      if (p.id === activePortfolioId) {
+        return { ...p, holdings: [...p.holdings, newHolding] };
+      }
+      return p;
+    }));
   };
 
   const handleUpdateHolding = (ticker: string, updates: Partial<Holding>) => {
-    setHoldings(holdings.map(h => 
-      h.stock.ticker === ticker ? { ...h, ...updates } : h
-    ));
+    setPortfolios(prev => prev.map(p => {
+      if (p.id === activePortfolioId) {
+        return {
+          ...p,
+          holdings: p.holdings.map(h => h.stock.ticker === ticker ? { ...h, ...updates } : h)
+        };
+      }
+      return p;
+    }));
   };
 
   const markAllRead = () => {
@@ -167,6 +201,10 @@ const App: React.FC = () => {
         return (
           <Portfolio 
             portfolio={portfolio} 
+            portfolios={portfolios}
+            activePortfolioId={activePortfolioId}
+            setActivePortfolioId={setActivePortfolioId}
+            onCreatePortfolio={handleCreatePortfolio}
             onAddHolding={handleAddHolding} 
             brokerages={brokerages} 
             setBrokerages={setBrokerages}
@@ -198,25 +236,21 @@ const App: React.FC = () => {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
-  // Render Auth if no user
   if (!user) {
     return <Auth onLogin={handleLogin} />;
   }
 
   return (
     <div className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
-      {/* Mobile Sidebar Overlay */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>
       )}
       
-      {/* Sidebar - responsive visibility */}
       <div className={`fixed lg:static inset-y-0 left-0 z-50 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition-transform duration-200 ease-in-out`}>
          <Sidebar currentView={currentView} setView={setCurrentView} user={user} onLogout={handleLogout} />
       </div>
       
       <main className="flex-1 lg:ml-64 w-full p-4 lg:p-8">
-        {/* Header */}
         <header className="flex justify-between items-center mb-8 sticky top-0 z-30 bg-slate-50/90 backdrop-blur-sm py-3 px-1">
           <div className="flex items-center gap-4">
             <button className="lg:hidden p-2 text-slate-500" onClick={() => setIsSidebarOpen(true)}>
@@ -247,7 +281,6 @@ const App: React.FC = () => {
                  )}
                </button>
 
-               {/* Notifications Dropdown */}
                {isNotificationsOpen && (
                  <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 p-0 z-50 animate-fade-in overflow-hidden">
                     <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
@@ -302,7 +335,6 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Dynamic Content */}
         <div className="max-w-7xl mx-auto animate-fade-in pb-10">
            {renderContent()}
         </div>

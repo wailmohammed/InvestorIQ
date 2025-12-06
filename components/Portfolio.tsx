@@ -1,11 +1,16 @@
 
 import React, { useState } from 'react';
-import { Portfolio as PortfolioType, Brokerage, UserProfile, UserRole, PlanTier } from '../types';
+import { Portfolio as PortfolioType, Brokerage, UserProfile, UserRole, PlanTier, PortfolioContainer } from '../types';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { Plus, Download, Share2, X, AlertTriangle, FileSpreadsheet, Globe, Keyboard, Loader2, Key, ShieldCheck, Trash2, Edit, Lock } from 'lucide-react';
+import { Plus, Download, Share2, X, AlertTriangle, FileSpreadsheet, Globe, Keyboard, Loader2, Key, ShieldCheck, Trash2, Edit, Lock, ChevronDown, Check, Briefcase, RefreshCcw } from 'lucide-react';
+import { PLAN_LIMITS } from '../constants';
 
 interface PortfolioProps {
   portfolio: PortfolioType;
+  portfolios: PortfolioContainer[];
+  activePortfolioId: string;
+  setActivePortfolioId: (id: string) => void;
+  onCreatePortfolio: (name: string) => void;
   onAddHolding?: (ticker: string, shares: number, avgCost: number) => void;
   brokerages: Brokerage[];
   setBrokerages: React.Dispatch<React.SetStateAction<Brokerage[]>>;
@@ -14,12 +19,25 @@ interface PortfolioProps {
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899'];
 
-const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerages, setBrokerages, user }) => {
+const Portfolio: React.FC<PortfolioProps> = ({ 
+  portfolio, 
+  portfolios, 
+  activePortfolioId, 
+  setActivePortfolioId, 
+  onCreatePortfolio,
+  onAddHolding, 
+  brokerages, 
+  setBrokerages, 
+  user 
+}) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPortfolioDropdownOpen, setIsPortfolioDropdownOpen] = useState(false);
   const [showShareToast, setShowShareToast] = useState(false);
   const [importMethod, setImportMethod] = useState<'MANUAL' | 'CSV' | 'API'>('MANUAL');
   const [selectedBroker, setSelectedBroker] = useState<string | null>(null);
   const [manageMode, setManageMode] = useState(false); // Admin mode for brokerages
+  const [newPortfolioName, setNewPortfolioName] = useState('');
+  const [isCreatingPortfolio, setIsCreatingPortfolio] = useState(false);
   
   // Form State
   const [ticker, setTicker] = useState('');
@@ -33,11 +51,15 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
   // Admin Form State
   const [newBrokerName, setNewBrokerName] = useState('');
   const [newBrokerLogo, setNewBrokerLogo] = useState('');
+  const [editingBrokerId, setEditingBrokerId] = useState<string | null>(null);
+  const [editColor, setEditColor] = useState('');
 
   const allocationData = portfolio.holdings.map(h => ({
     name: h.stock.ticker,
     value: h.equity
   }));
+
+  const activePortfolio = portfolios.find(p => p.id === activePortfolioId) || portfolios[0];
 
   const handleShare = () => {
     navigator.clipboard.writeText(`https://investiq.app/p/${Math.random().toString(36).substring(7)}`);
@@ -47,10 +69,26 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const limit = PLAN_LIMITS[user.plan].maxHoldings;
+    if (portfolio.holdings.length >= limit) {
+      alert(`Plan limit reached (${limit} holdings). Upgrade to add more.`);
+      return;
+    }
+
     if (onAddHolding && ticker && shares && cost) {
       onAddHolding(ticker.toUpperCase(), Number(shares), Number(cost));
       setIsModalOpen(false);
       resetForm();
+    }
+  };
+
+  const handleCreatePortfolioSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if(newPortfolioName) {
+      onCreatePortfolio(newPortfolioName);
+      setNewPortfolioName('');
+      setIsCreatingPortfolio(false);
+      setIsPortfolioDropdownOpen(false);
     }
   };
 
@@ -79,7 +117,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
       let importedCount = 0;
 
       if (selectedBroker === 'Binance') {
-        // Mock Binance Assets
         if (onAddHolding) {
           onAddHolding('BTC', 0.45, 42000);
           onAddHolding('ETH', 5.2, 2800);
@@ -87,7 +124,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
           importedCount = 3;
         }
       } else if (selectedBroker === 'Trading212') {
-        // Mock Trading212 Assets
         if (onAddHolding) {
           onAddHolding('TSLA', 10, 210);
           onAddHolding('AMZN', 25, 145);
@@ -95,7 +131,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
           importedCount = 3;
         }
       } else {
-        // Generic Fallback
         if (onAddHolding) {
           onAddHolding('VTI', 10, 220);
           importedCount = 1;
@@ -103,7 +138,6 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
       }
 
       setImportResult({ count: importedCount, source: selectedBroker || 'API' });
-      // Don't close immediately so they see the success message
     }, 2500);
   };
 
@@ -133,6 +167,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
 
   const handleUpdateColor = (id: string, colorClass: string) => {
      setBrokerages(prev => prev.map(b => b.id === id ? { ...b, colorClass } : b));
+     setEditingBrokerId(null);
   };
 
   const isAdmin = user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
@@ -140,11 +175,58 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
 
   return (
     <div className="space-y-6 relative animate-fade-in">
-      <div className="flex justify-between items-center">
-        <div>
-           <h2 className="text-2xl font-bold text-slate-900">Portfolio Holdings</h2>
-           <p className="text-slate-500">Manage and track your asset allocation.</p>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="relative">
+           <button 
+             onClick={() => setIsPortfolioDropdownOpen(!isPortfolioDropdownOpen)}
+             className="flex items-center gap-2 text-2xl font-bold text-slate-900 hover:text-blue-600 transition-colors"
+           >
+             {activePortfolio.name} <ChevronDown size={20} />
+           </button>
+           <p className="text-slate-500">Total Value: <span className="font-semibold text-slate-700">${portfolio.totalValue.toLocaleString()}</span></p>
+
+           {isPortfolioDropdownOpen && (
+             <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-slate-100 z-50 animate-fade-in">
+                <div className="p-2 space-y-1">
+                   {portfolios.map(p => (
+                     <button
+                       key={p.id}
+                       onClick={() => { setActivePortfolioId(p.id); setIsPortfolioDropdownOpen(false); }}
+                       className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium flex justify-between items-center ${activePortfolioId === p.id ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'}`}
+                     >
+                       {p.name}
+                       {activePortfolioId === p.id && <Check size={14} />}
+                     </button>
+                   ))}
+                </div>
+                <div className="border-t border-slate-100 p-2">
+                   {!isCreatingPortfolio ? (
+                      <button 
+                        onClick={() => setIsCreatingPortfolio(true)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 font-bold hover:bg-blue-50 rounded-lg"
+                      >
+                        <Plus size={16} /> New Portfolio
+                      </button>
+                   ) : (
+                      <form onSubmit={handleCreatePortfolioSubmit} className="space-y-2">
+                        <input 
+                          autoFocus
+                          placeholder="Portfolio Name"
+                          className="w-full border rounded px-2 py-1 text-sm"
+                          value={newPortfolioName}
+                          onChange={(e) => setNewPortfolioName(e.target.value)}
+                        />
+                        <div className="flex gap-2">
+                           <button type="submit" className="flex-1 bg-blue-600 text-white text-xs py-1 rounded">Create</button>
+                           <button onClick={() => setIsCreatingPortfolio(false)} className="flex-1 bg-slate-100 text-slate-600 text-xs py-1 rounded">Cancel</button>
+                        </div>
+                      </form>
+                   )}
+                </div>
+             </div>
+           )}
         </div>
+
         <div className="flex gap-3">
           <button 
             onClick={handleShare}
@@ -175,7 +257,7 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-lg p-0 shadow-2xl animate-fade-in overflow-hidden max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-              <h3 className="text-xl font-bold text-slate-900">Add Assets</h3>
+              <h3 className="text-xl font-bold text-slate-900">Add Assets to {activePortfolio.name}</h3>
               <button onClick={() => { setIsModalOpen(false); resetForm(); setManageMode(false); }} className="text-slate-400 hover:text-slate-600">
                 <X size={24} />
               </button>
@@ -312,7 +394,26 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
                              <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${b.colorClass}`}>{b.logoChar}</span>
                              <span className="text-sm font-medium">{b.name}</span>
                            </div>
-                           <div className="flex items-center gap-1">
+                           
+                           <div className="flex items-center gap-2">
+                             {/* Color Editor */}
+                             {editingBrokerId === b.id ? (
+                               <div className="flex items-center gap-1">
+                                  <input 
+                                    className="w-20 text-xs border rounded px-1"
+                                    placeholder="bg-red-100"
+                                    value={editColor}
+                                    onChange={e => setEditColor(e.target.value)}
+                                  />
+                                  <button onClick={() => handleUpdateColor(b.id, editColor)} className="text-green-600"><Check size={14} /></button>
+                                  <button onClick={() => setEditingBrokerId(null)} className="text-slate-400"><X size={14} /></button>
+                               </div>
+                             ) : (
+                               <button onClick={() => { setEditingBrokerId(b.id); setEditColor(b.colorClass); }} className="text-slate-400 hover:text-blue-600">
+                                 <Edit size={14} />
+                               </button>
+                             )}
+
                              <button onClick={() => handleToggleBrokerStatus(b.id)} className={`text-xs px-2 py-1 rounded ${b.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                                {b.status}
                              </button>
@@ -467,57 +568,69 @@ const Portfolio: React.FC<PortfolioProps> = ({ portfolio, onAddHolding, brokerag
           </div>
         </div>
 
-        {/* Holdings Table */}
-        <div className="bg-white p-0 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-             <h3 className="text-lg font-bold text-slate-900">Assets</h3>
-             <button className="text-blue-600 text-sm font-medium flex items-center gap-1">
-               <AlertTriangle size={14} /> Rebalance
+        {/* Enhanced Holdings Table */}
+        <div className="bg-white p-0 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2 overflow-hidden flex flex-col">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+             <div className="flex items-center gap-2">
+                <Briefcase size={20} className="text-slate-500" />
+                <h3 className="text-lg font-bold text-slate-900">Holdings</h3>
+             </div>
+             <button className="text-blue-600 text-sm font-medium flex items-center gap-1 hover:text-blue-700 bg-white border border-blue-200 px-3 py-1 rounded-full shadow-sm">
+               <RefreshCcw size={12} /> Rebalance
              </button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
-              <thead className="bg-slate-50">
+              <thead className="bg-white border-b border-slate-100">
                 <tr>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase">Ticker</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Shares</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Value</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Return</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Actual %</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase text-right">Target %</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Asset</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Price</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Shares</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Value</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Return</th>
+                  <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Allocation</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-50">
                 {portfolio.holdings.map((h, index) => {
                   const allocPercent = (h.equity / portfolio.totalValue) * 100;
-                  const drift = h.targetAllocation ? allocPercent - h.targetAllocation : 0;
+                  const dayChange = (Math.random() * 2) - 1; // Mock daily change
                   
                   return (
-                    <tr key={h.stock.ticker} className="hover:bg-slate-50 transition-colors">
+                    <tr key={h.stock.ticker} className="hover:bg-slate-50 transition-colors group">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                          <div className={`w-2 h-8 rounded-sm`} style={{backgroundColor: COLORS[index % COLORS.length]}}></div>
+                          <div className={`w-1 h-8 rounded-full`} style={{backgroundColor: COLORS[index % COLORS.length]}}></div>
                           <div>
-                            <div className="font-bold text-slate-800">{h.stock.ticker}</div>
+                            <div className="font-bold text-slate-900">{h.stock.ticker}</div>
                             <div className="text-xs text-slate-500">{h.stock.sector}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right text-slate-700">{h.shares.toFixed(h.shares % 1 !== 0 ? 3 : 0)}</td>
-                      <td className="px-6 py-4 text-right font-medium text-slate-800">${h.equity.toLocaleString()}</td>
                       <td className="px-6 py-4 text-right">
-                        <div className={h.totalReturn >= 0 ? 'text-green-500 font-medium' : 'text-red-500 font-medium'}>
-                          {h.totalReturn >= 0 ? '+' : ''}{h.totalReturnPercent.toFixed(2)}%
+                        <div className="text-slate-900 font-medium">${h.stock.price.toFixed(2)}</div>
+                        <div className={`text-xs ${dayChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                           {dayChange >= 0 ? '+' : ''}{dayChange.toFixed(2)}%
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right text-slate-700 font-medium">{allocPercent.toFixed(1)}%</td>
-                      <td className="px-6 py-4 text-right text-slate-500 relative group">
-                        {h.targetAllocation ? `${h.targetAllocation}%` : '-'}
-                        {h.targetAllocation && Math.abs(drift) > 2 && (
-                          <div className={`text-[10px] absolute right-0 -bottom-1 ${drift > 0 ? 'text-red-500' : 'text-blue-500'}`}>
-                             {drift > 0 ? 'Sell ' : 'Buy '} {Math.abs(drift).toFixed(1)}%
-                          </div>
-                        )}
+                      <td className="px-6 py-4 text-right">
+                        <div className="text-slate-900">{h.shares.toFixed(h.shares % 1 !== 0 ? 3 : 0)}</div>
+                        <div className="text-xs text-slate-400">@ ${h.avgCost.toFixed(2)}</div>
+                      </td>
+                      <td className="px-6 py-4 text-right font-bold text-slate-900">${h.equity.toLocaleString()}</td>
+                      <td className="px-6 py-4 text-right">
+                        <div className={`font-medium ${h.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {h.totalReturn >= 0 ? '+' : ''}{h.totalReturnPercent.toFixed(2)}%
+                        </div>
+                        <div className="text-xs text-slate-400">
+                          {h.totalReturn >= 0 ? '+' : ''}${Math.abs(h.totalReturn).toLocaleString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-right text-slate-700 font-medium relative">
+                        {allocPercent.toFixed(1)}%
+                        <div className="w-full bg-slate-100 h-1 mt-1 rounded-full overflow-hidden">
+                           <div className="h-full rounded-full" style={{width: `${allocPercent}%`, backgroundColor: COLORS[index % COLORS.length]}}></div>
+                        </div>
                       </td>
                     </tr>
                   );

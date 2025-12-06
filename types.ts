@@ -28,6 +28,13 @@ export interface Portfolio {
   dividendYield: number;
 }
 
+export interface PortfolioContainer {
+  id: string;
+  name: string;
+  holdings: Holding[];
+  isDefault: boolean;
+}
+
 export interface SocialPost {
   id: string;
   user: string;

@@ -1,5 +1,5 @@
 
-import { Holding, Portfolio, SocialPost, Stock, Brokerage, CryptoWallet } from './types';
+import { Holding, Portfolio, SocialPost, Stock, Brokerage, CryptoWallet, PlanTier } from './types';
 
 export const MOCK_STOCKS: Record<string, Stock> = {
   AAPL: { ticker: 'AAPL', name: 'Apple Inc.', sector: 'Technology', price: 185.92, dividendYield: 0.52, dividendFrequency: 'Quarterly', logoUrl: 'https://logo.clearbit.com/apple.com', dividendSafetyScore: 99 },
@@ -81,3 +81,9 @@ export const DEFAULT_WALLETS: CryptoWallet[] = [
   { id: '1', network: 'Ethereum (ERC20)', address: '0x71C...9A21', label: 'Main Treasury' },
   { id: '2', network: 'Bitcoin (BTC)', address: 'bc1q...8zw9', label: 'Cold Storage' },
 ];
+
+export const PLAN_LIMITS = {
+  [PlanTier.FREE]: { maxHoldings: 10, maxPortfolios: 1, allowApi: false },
+  [PlanTier.PRO]: { maxHoldings: 50, maxPortfolios: 3, allowApi: true },
+  [PlanTier.ELITE]: { maxHoldings: 9999, maxPortfolios: 10, allowApi: true },
+};
