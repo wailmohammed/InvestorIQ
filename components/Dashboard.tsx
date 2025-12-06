@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Portfolio } from '../types';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
-import { ArrowUpRight, ArrowDownRight, DollarSign, Wallet } from 'lucide-react';
+import { ArrowUpRight, DollarSign, Wallet } from 'lucide-react';
 import { MONTHLY_DIVIDENDS_DATA } from '../constants';
 
 interface DashboardProps {
@@ -18,6 +18,36 @@ const Dashboard: React.FC<DashboardProps> = ({ portfolio }) => {
     { name: 'May', value: 48900 },
     { name: 'Jun', value: 48500 },
   ], []);
+
+  // Custom Tooltip component
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const currentValue = payload[0].value;
+      const index = performanceData.findIndex(d => d.name === label);
+      let changeText = '';
+      
+      if (index > 0) {
+        const prevValue = performanceData[index - 1].value;
+        const diff = currentValue - prevValue;
+        const percent = ((diff / prevValue) * 100).toFixed(2);
+        const sign = diff >= 0 ? '+' : '';
+        changeText = `${sign}$${diff.toLocaleString()} (${sign}${percent}%)`;
+      } else {
+         changeText = "Start of period";
+      }
+
+      return (
+        <div className="bg-white p-3 border border-slate-100 shadow-lg rounded-xl">
+          <p className="font-bold text-slate-900">{label}</p>
+          <p className="text-blue-600 font-medium">${currentValue.toLocaleString()}</p>
+          <p className={`text-xs ${changeText.includes('-') ? 'text-red-500' : 'text-green-500'}`}>
+            {changeText}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -101,10 +131,7 @@ const Dashboard: React.FC<DashboardProps> = ({ portfolio }) => {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 12}} tickFormatter={(value) => `$${value/1000}k`} />
-                <Tooltip 
-                  contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                  formatter={(value: number) => [`$${value.toLocaleString()}`, 'Value']}
-                />
+                <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
               </AreaChart>
             </ResponsiveContainer>

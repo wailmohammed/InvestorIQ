@@ -1,86 +1,309 @@
-import React, { useState, useMemo } from 'react';
+
+import React, { useState, useMemo, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import Portfolio from './components/Portfolio';
 import DividendAnalytics from './components/DividendAnalytics';
 import Community from './components/Community';
 import AIAssistant from './components/AIAssistant';
-import { ViewState, Portfolio as PortfolioType } from './types';
-import { INITIAL_HOLDINGS } from './constants';
-import { Bell, Search, Settings } from 'lucide-react';
+import Auth from './components/Auth';
+import AdminDashboard from './components/AdminDashboard';
+import Billing from './components/Billing';
+import { ViewState, Portfolio as PortfolioType, Holding, Alert, Notification, PlanTier, UserProfile, Brokerage, CryptoWallet } from './types';
+import { INITIAL_HOLDINGS, MOCK_STOCKS, DEFAULT_BROKERAGES, DEFAULT_WALLETS } from './constants';
+import { Bell, Search, Settings, Shield, X, Check, Menu } from 'lucide-react';
+import { supabase } from './supabaseClient'; 
 
 const App: React.FC = () => {
+  // Auth State
+  const [user, setUser] = useState<UserProfile | null>(null);
+
   const [currentView, setCurrentView] = useState<ViewState>(ViewState.DASHBOARD);
-  
+  const [holdings, setHoldings] = useState<Holding[]>(INITIAL_HOLDINGS);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  // Global Config State (Managed by Admin)
+  const [brokerages, setBrokerages] = useState<Brokerage[]>(DEFAULT_BROKERAGES);
+  const [wallets, setWallets] = useState<CryptoWallet[]>(DEFAULT_WALLETS);
+
+  // Initial Auth Check (Simulated)
+  useEffect(() => {
+    // In a real app, check supabase.auth.getSession() here
+    // For now, we start logged out to show the login screen
+  }, []);
+
+  const handleLogin = (loggedInUser: UserProfile) => {
+    setUser(loggedInUser);
+    setCurrentView(ViewState.DASHBOARD);
+  };
+
+  const handleLogout = () => {
+    setUser(null);
+    setCurrentView(ViewState.AUTH);
+  };
+
   // Portfolio State (Calculated from holdings)
   const portfolio: PortfolioType = useMemo(() => {
-    const totalValue = INITIAL_HOLDINGS.reduce((acc, h) => acc + h.equity, 0);
-    const totalDividendIncome = INITIAL_HOLDINGS.reduce((acc, h) => acc + (h.shares * h.stock.price * (h.stock.dividendYield / 100)), 0);
+    const totalValue = holdings.reduce((acc, h) => acc + h.equity, 0);
+    const totalDividendIncome = holdings.reduce((acc, h) => acc + (h.shares * h.stock.price * (h.stock.dividendYield / 100)), 0);
     const dividendYield = totalValue > 0 ? (totalDividendIncome / totalValue) * 100 : 0;
     
     return {
-      holdings: INITIAL_HOLDINGS,
+      holdings: holdings,
       totalValue,
       totalDividendIncome,
       dividendYield
     };
-  }, []);
+  }, [holdings]);
+
+  // Backend Logic Simulation: Alert Checking
+  useEffect(() => {
+    if (!user) return; // Only run if user is logged in
+
+    const checkAlerts = () => {
+      setAlerts(prevAlerts => {
+        let hasChanges = false;
+        const newNotifications: Notification[] = [];
+        
+        const updatedAlerts = prevAlerts.map(alert => {
+          if (!alert.active || alert.triggered) return alert;
+
+          const stock = holdings.find(h => h.stock.ticker === alert.ticker)?.stock || MOCK_STOCKS[alert.ticker];
+          
+          if (!stock) return alert;
+
+          // Simulate live price fluctuation for demo purposes (+/- 3% range to trigger alerts easily)
+          const fluctuation = (Math.random() * 0.06) - 0.03; 
+          const simulatedPrice = stock.price * (1 + fluctuation);
+
+          let triggered = false;
+          let triggerMsg = '';
+
+          if (alert.condition === 'ABOVE' && simulatedPrice >= alert.value) {
+            triggered = true;
+            triggerMsg = `Price rose above $${alert.value}`;
+          }
+          if (alert.condition === 'BELOW' && simulatedPrice <= alert.value) {
+            triggered = true;
+            triggerMsg = `Price fell below $${alert.value}`;
+          }
+          if (alert.condition === 'CHANGE_PCT' && alert.baselinePrice) {
+             const pctChange = Math.abs((simulatedPrice - alert.baselinePrice) / alert.baselinePrice) * 100;
+             if (pctChange >= alert.value) {
+                triggered = true;
+                triggerMsg = `Price moved by ${pctChange.toFixed(2)}% (Target: ${alert.value}%)`;
+             }
+          }
+          
+          if (triggered) {
+            hasChanges = true;
+            newNotifications.push({
+              id: Date.now().toString(),
+              title: `Price Alert: ${alert.ticker}`,
+              message: `${alert.ticker}: ${triggerMsg}. Current: $${simulatedPrice.toFixed(2)}`,
+              timestamp: new Date(),
+              read: false,
+              type: 'ALERT'
+            });
+          }
+
+          return triggered ? { ...alert, triggered: true } : alert;
+        });
+
+        if (newNotifications.length > 0) {
+           setNotifications(prev => [...newNotifications, ...prev]);
+        }
+
+        return hasChanges ? updatedAlerts : prevAlerts;
+      });
+    };
+
+    const intervalId = setInterval(checkAlerts, 10000); // Check every 10 seconds
+    return () => clearInterval(intervalId);
+  }, [holdings, user]); // Removed 'alerts' from dependency array to avoid infinite loops, relying on functional state update
+
+  const handleAddHolding = (ticker: string, shares: number, avgCost: number) => {
+    const stock = MOCK_STOCKS[ticker] || {
+      ticker,
+      name: ticker,
+      sector: 'Unknown',
+      price: avgCost, // Assume market price is close to cost if unknown
+      dividendYield: 0,
+      dividendFrequency: 'Quarterly',
+    };
+
+    const newHolding: Holding = {
+      stock,
+      shares,
+      avgCost,
+      equity: shares * stock.price,
+      totalReturn: (stock.price - avgCost) * shares,
+      totalReturnPercent: avgCost > 0 ? ((stock.price - avgCost) / avgCost) * 100 : 0,
+      dripEnabled: false,
+      targetAllocation: 0
+    };
+
+    setHoldings(prev => [...prev, newHolding]);
+  };
+
+  const handleUpdateHolding = (ticker: string, updates: Partial<Holding>) => {
+    setHoldings(holdings.map(h => 
+      h.stock.ticker === ticker ? { ...h, ...updates } : h
+    ));
+  };
+
+  const markAllRead = () => {
+    setNotifications(prev => prev.map(n => ({...n, read: true})));
+  };
 
   const renderContent = () => {
     switch (currentView) {
       case ViewState.DASHBOARD:
         return <Dashboard portfolio={portfolio} />;
       case ViewState.PORTFOLIO:
-        return <Portfolio portfolio={portfolio} />;
+        return (
+          <Portfolio 
+            portfolio={portfolio} 
+            onAddHolding={handleAddHolding} 
+            brokerages={brokerages} 
+            setBrokerages={setBrokerages}
+            user={user}
+          />
+        );
       case ViewState.DIVIDENDS:
-        return <DividendAnalytics portfolio={portfolio} />;
+        return <DividendAnalytics portfolio={portfolio} onUpdateHolding={handleUpdateHolding} />;
       case ViewState.COMMUNITY:
         return <Community />;
       case ViewState.ANALYZER:
-        return <AIAssistant portfolio={portfolio} />;
+        return <AIAssistant portfolio={portfolio} alerts={alerts} setAlerts={setAlerts} />;
+      case ViewState.ADMIN:
+        return user ? (
+          <AdminDashboard 
+            currentUser={user} 
+            brokerages={brokerages} 
+            setBrokerages={setBrokerages}
+            wallets={wallets}
+            setWallets={setWallets}
+          />
+        ) : null;
+      case ViewState.BILLING:
+        return user ? <Billing user={user} onUpdatePlan={(plan) => setUser({...user, plan})} /> : null;
       default:
         return <Dashboard portfolio={portfolio} />;
     }
   };
 
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  // Render Auth if no user
+  if (!user) {
+    return <Auth onLogin={handleLogin} />;
+  }
+
   return (
-    <div className="flex min-h-screen bg-slate-50 text-slate-900">
-      <Sidebar currentView={currentView} setView={setCurrentView} />
+    <div className="flex min-h-screen bg-slate-50 text-slate-900 font-sans">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsSidebarOpen(false)}></div>
+      )}
       
-      <main className="ml-64 flex-1 p-8">
+      {/* Sidebar - responsive visibility */}
+      <div className={`fixed lg:static inset-y-0 left-0 z-50 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 transition-transform duration-200 ease-in-out`}>
+         <Sidebar currentView={currentView} setView={setCurrentView} user={user} onLogout={handleLogout} />
+      </div>
+      
+      <main className="flex-1 lg:ml-64 w-full p-4 lg:p-8">
         {/* Header */}
-        <header className="flex justify-between items-center mb-8">
-          <div className="relative w-96">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
-            <input 
-              type="text" 
-              placeholder="Search ticker, etf, or asset..." 
-              className="w-full bg-white border border-slate-200 pl-10 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
-            />
+        <header className="flex justify-between items-center mb-8 sticky top-0 z-30 bg-slate-50/90 backdrop-blur-sm py-3 px-1">
+          <div className="flex items-center gap-4">
+            <button className="lg:hidden p-2 text-slate-500" onClick={() => setIsSidebarOpen(true)}>
+              <Menu size={24} />
+            </button>
+            <div className="relative w-64 md:w-96 hidden md:block">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+              <input 
+                type="text" 
+                placeholder="Search ticker, etf, or asset..." 
+                className="w-full bg-white border border-slate-200 pl-10 pr-4 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all hover:border-blue-300"
+              />
+            </div>
           </div>
           
-          <div className="flex items-center gap-4">
-             <button className="p-2 text-slate-500 hover:bg-white hover:shadow-sm rounded-lg transition-all relative">
-               <Bell size={20} />
-               <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>
-             </button>
-             <button className="p-2 text-slate-500 hover:bg-white hover:shadow-sm rounded-lg transition-all">
+          <div className="flex items-center gap-3 relative">
+             <div className="relative">
+               <button 
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                className={`p-2 hover:bg-white hover:shadow-sm rounded-lg transition-all relative ${isNotificationsOpen ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+               >
+                 <Bell size={20} />
+                 {unreadCount > 0 && (
+                   <span className="absolute top-2 right-2 flex h-3 w-3">
+                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                     <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                   </span>
+                 )}
+               </button>
+
+               {/* Notifications Dropdown */}
+               {isNotificationsOpen && (
+                 <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 p-0 z-50 animate-fade-in overflow-hidden">
+                    <div className="flex justify-between items-center p-4 border-b border-slate-100 bg-slate-50">
+                      <h3 className="font-bold text-slate-900">Notifications</h3>
+                      <button className="text-xs text-blue-600 hover:underline flex items-center gap-1" onClick={markAllRead}>
+                         <Check size={12} /> Mark all read
+                      </button>
+                    </div>
+                    <div className="space-y-0 max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="text-center py-8 px-4">
+                           <Bell size={24} className="mx-auto text-slate-200 mb-2" />
+                           <p className="text-sm text-slate-400">You're all caught up</p>
+                        </div>
+                      ) : (
+                        notifications.map(n => (
+                          <div key={n.id} className={`flex gap-3 items-start p-4 border-b border-slate-50 hover:bg-slate-50 transition-colors ${n.read ? 'opacity-60' : 'bg-blue-50/30'}`}>
+                             <div className={`p-2 rounded-full shrink-0 ${n.type === 'ALERT' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600'}`}>
+                               {n.type === 'ALERT' ? <Bell size={16} /> : <Shield size={16} />}
+                             </div>
+                             <div>
+                               <p className="text-sm font-semibold text-slate-800 leading-tight mb-1">{n.title}</p>
+                               <p className="text-xs text-slate-500 leading-relaxed">{n.message}</p>
+                               <p className="text-[10px] text-slate-400 mt-2 font-medium">{n.timestamp.toLocaleTimeString()}</p>
+                             </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                 </div>
+               )}
+             </div>
+
+             <button 
+               onClick={() => setCurrentView(ViewState.BILLING)}
+               className="p-2 text-slate-500 hover:bg-white hover:shadow-sm rounded-lg transition-all"
+             >
                <Settings size={20} />
              </button>
+             
              <div className="flex items-center gap-3 pl-4 border-l border-slate-200">
                 <div className="text-right hidden md:block">
-                  <div className="text-sm font-bold text-slate-900">Alex Investor</div>
-                  <div className="text-xs text-slate-500">Pro Member</div>
+                  <div className="text-sm font-bold text-slate-900">{user.name}</div>
+                  <div className="text-xs text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded-full inline-block uppercase">
+                    {user.plan}
+                  </div>
                 </div>
-                <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
-                  AI
+                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-bold shadow-lg shadow-blue-200 cursor-pointer" onClick={handleLogout}>
+                  {user.name.charAt(0)}
                 </div>
              </div>
           </div>
         </header>
 
         {/* Dynamic Content */}
-        <div className="max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto animate-fade-in pb-10">
            {renderContent()}
         </div>
       </main>
