@@ -23,20 +23,20 @@ interface PortfolioProps {
 
 const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#6366f1', '#14b8a6'];
 
-const Portfolio: React.FC<PortfolioProps> = ({ 
-  portfolio, 
-  portfolios, 
-  activePortfolioId, 
-  setActivePortfolioId, 
+const Portfolio: React.FC<PortfolioProps> = ({
+  portfolio,
+  portfolios,
+  activePortfolioId,
+  setActivePortfolioId,
   onCreatePortfolio,
   onRenamePortfolio,
   onDeletePortfolio,
   onAddHolding,
   onEditHolding,
   onDeleteHolding,
-  brokerages, 
-  setBrokerages, 
-  user 
+  brokerages,
+  setBrokerages,
+  user
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isPortfolioDropdownOpen, setIsPortfolioDropdownOpen] = useState(false);
@@ -48,7 +48,7 @@ const Portfolio: React.FC<PortfolioProps> = ({
   const [isCreatingPortfolio, setIsCreatingPortfolio] = useState(false);
   const [editingPortfolioId, setEditingPortfolioId] = useState<string | null>(null);
   const [editPortfolioName, setEditPortfolioName] = useState('');
-  
+
   // Holding Action Menu State
   const [openActionMenuId, setOpenActionMenuId] = useState<string | null>(null);
 
@@ -57,12 +57,14 @@ const Portfolio: React.FC<PortfolioProps> = ({
   const [ticker, setTicker] = useState('');
   const [shares, setShares] = useState('');
   const [cost, setCost] = useState('');
-  
+
   // API Connection State
   const [apiStep, setApiStep] = useState<'IDLE' | 'CONNECTING' | 'FETCHING' | 'SAVING' | 'COMPLETE'>('IDLE');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
-  const [importResult, setImportResult] = useState<{count: number, source: string} | null>(null);
+
+  const [importResult, setImportResult] = useState<{ count: number, source: string, errors: string[] } | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   // Admin Form State
   const [newBrokerName, setNewBrokerName] = useState('');
@@ -102,7 +104,7 @@ const Portfolio: React.FC<PortfolioProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const limit = PLAN_LIMITS[user.plan].maxHoldings;
-    
+
     // Check limit only for adding new holdings
     if (modalMode === 'ADD' && portfolio.holdings.length >= limit) {
       alert(`Plan limit reached (${limit} holdings). Upgrade to add more.`);
@@ -122,7 +124,7 @@ const Portfolio: React.FC<PortfolioProps> = ({
 
   const handleCreatePortfolioSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if(newPortfolioName) {
+    if (newPortfolioName) {
       onCreatePortfolio(newPortfolioName);
       setNewPortfolioName('');
       setIsCreatingPortfolio(false);
@@ -146,6 +148,71 @@ const Portfolio: React.FC<PortfolioProps> = ({
     setImportResult(null);
     setSelectedBroker(null);
     setApiStep('IDLE');
+    setImportResult(null);
+  };
+
+  const handleDownloadTemplate = () => {
+    const csvContent = "data:text/csv;charset=utf-8,Ticker,Shares,AvgCost\nAAPL,10,150.00\nMSFT,5,300.00\nGOOGL,15,2800.00";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "investiq_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file && (file.type === "text/csv" || file.name.endsWith('.csv'))) {
+      processCSV(file);
+    } else {
+      alert("Please upload a valid CSV file.");
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processCSV(file);
+    }
+  };
+
+  const processCSV = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      const lines = text.split('\n');
+      let count = 0;
+      // Skip header, process lines
+      lines.slice(1).forEach(line => {
+        if (!line.trim()) return;
+        const parts = line.split(',');
+        if (parts.length >= 3) {
+          const ticker = parts[0].trim().toUpperCase();
+          const shares = parseFloat(parts[1].trim());
+          const cost = parseFloat(parts[2].trim());
+
+          if (ticker && !isNaN(shares) && !isNaN(cost) && onAddHolding) {
+            onAddHolding(ticker, shares, cost);
+            count++;
+          }
+        }
+      });
+      setImportResult({ count, source: 'CSV Import', errors: [] });
+    };
+    reader.readAsText(file);
   };
 
   const handleBrokerageConnect = (broker: string) => {
@@ -157,19 +224,21 @@ const Portfolio: React.FC<PortfolioProps> = ({
   const submitApiConnection = () => {
     // Step 1: Connecting to Brokerage
     setApiStep('CONNECTING');
-    
+
     // Simulate Network Latency for Auth
     setTimeout(() => {
       // Step 2: Fetching Data
       setApiStep('FETCHING');
-      
+
       setTimeout(() => {
         // Step 3: Saving to Internal Database
         setApiStep('SAVING');
-        
+
         setTimeout(() => {
           // Final Step: Update UI
           let importedCount = 0;
+          let errors: string[] = [];
+
           if (selectedBroker === 'Binance') {
             if (onAddHolding) {
               onAddHolding('BTC', 0.45, 42000);
@@ -190,9 +259,10 @@ const Portfolio: React.FC<PortfolioProps> = ({
             if (onAddHolding) {
               onAddHolding('VTI', 10, 220);
               importedCount = 1;
+              errors.push("Skipped: 'UNKNOWN_TICKER' not found in database.");
             }
           }
-          setImportResult({ count: importedCount, source: selectedBroker || 'API' });
+          setImportResult({ count: importedCount, source: selectedBroker || 'API', errors });
           setApiStep('COMPLETE');
         }, 1500); // Time to "Save to DB"
       }, 2000); // Time to "Fetch from Broker"
@@ -220,12 +290,12 @@ const Portfolio: React.FC<PortfolioProps> = ({
   };
 
   const handleToggleBrokerStatus = (id: string) => {
-    setBrokerages(prev => prev.map(b => b.id === id ? { ...b, status: b.status === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE'} : b));
+    setBrokerages(prev => prev.map(b => b.id === id ? { ...b, status: b.status === 'ACTIVE' ? 'MAINTENANCE' : 'ACTIVE' } : b));
   };
 
   const handleUpdateColor = (id: string, colorClass: string) => {
-     setBrokerages(prev => prev.map(b => b.id === id ? { ...b, colorClass } : b));
-     setEditingBrokerId(null);
+    setBrokerages(prev => prev.map(b => b.id === id ? { ...b, colorClass } : b));
+    setEditingBrokerId(null);
   };
 
   const isAdmin = user.role === UserRole.ADMIN || user.role === UserRole.SUPER_ADMIN;
@@ -235,81 +305,81 @@ const Portfolio: React.FC<PortfolioProps> = ({
     <div className="space-y-6 relative animate-fade-in" onClick={() => setOpenActionMenuId(null)}>
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="relative">
-           <button 
-             onClick={(e) => { e.stopPropagation(); setIsPortfolioDropdownOpen(!isPortfolioDropdownOpen); }}
-             className="flex items-center gap-2 text-2xl font-bold text-slate-900 hover:text-blue-600 transition-colors group"
-           >
-             {activePortfolio.name} <ChevronDown size={20} className={`transition-transform duration-200 ${isPortfolioDropdownOpen ? 'rotate-180' : ''}`}/>
-           </button>
-           <p className="text-slate-500">Total Value: <span className="font-semibold text-slate-700">${portfolio.totalValue.toLocaleString()}</span></p>
+          <button
+            onClick={(e) => { e.stopPropagation(); setIsPortfolioDropdownOpen(!isPortfolioDropdownOpen); }}
+            className="flex items-center gap-2 text-2xl font-bold text-slate-900 hover:text-blue-600 transition-colors group"
+          >
+            {activePortfolio.name} <ChevronDown size={20} className={`transition-transform duration-200 ${isPortfolioDropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <p className="text-slate-500">Total Value: <span className="font-semibold text-slate-700">${portfolio.totalValue.toLocaleString()}</span></p>
 
-           {isPortfolioDropdownOpen && (
-             <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 z-50 animate-fade-in" onClick={e => e.stopPropagation()}>
-                <div className="p-2 space-y-1">
-                   {portfolios.map(p => (
-                     <div key={p.id} className="flex items-center justify-between group rounded-lg hover:bg-slate-50 pr-2">
-                        {editingPortfolioId === p.id ? (
-                           <div className="flex-1 flex items-center p-1">
-                             <input 
-                               value={editPortfolioName}
-                               onChange={(e) => setEditPortfolioName(e.target.value)}
-                               className="w-full border rounded px-1 text-sm mr-1"
-                               autoFocus
-                             />
-                             <button onClick={() => handleSaveRenamePortfolio(p.id)} className="text-green-600"><Check size={14} /></button>
-                             <button onClick={() => setEditingPortfolioId(null)} className="text-red-500"><X size={14} /></button>
-                           </div>
-                        ) : (
-                          <button
-                            onClick={() => { setActivePortfolioId(p.id); setIsPortfolioDropdownOpen(false); }}
-                            className={`flex-1 text-left px-3 py-2 text-sm font-medium flex justify-between items-center ${activePortfolioId === p.id ? 'text-blue-700' : 'text-slate-700'}`}
-                          >
-                            {p.name}
-                            {activePortfolioId === p.id && <Check size={14} />}
-                          </button>
-                        )}
-                        
-                        {!editingPortfolioId && (
-                          <div className="hidden group-hover:flex gap-1">
-                            <button onClick={() => { setEditingPortfolioId(p.id); setEditPortfolioName(p.name); }} className="text-slate-400 hover:text-blue-600 p-1"><Edit size={12} /></button>
-                            {portfolios.length > 1 && (
-                              <button onClick={() => onDeletePortfolio && onDeletePortfolio(p.id)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={12} /></button>
-                            )}
-                          </div>
-                        )}
-                     </div>
-                   ))}
-                </div>
-                <div className="border-t border-slate-100 p-2">
-                   {!isCreatingPortfolio ? (
-                      <button 
-                        onClick={() => setIsCreatingPortfolio(true)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 font-bold hover:bg-blue-50 rounded-lg"
-                      >
-                        <Plus size={16} /> New Portfolio
-                      </button>
-                   ) : (
-                      <form onSubmit={handleCreatePortfolioSubmit} className="space-y-2">
-                        <input 
+          {isPortfolioDropdownOpen && (
+            <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-slate-100 z-50 animate-fade-in" onClick={e => e.stopPropagation()}>
+              <div className="p-2 space-y-1">
+                {portfolios.map(p => (
+                  <div key={p.id} className="flex items-center justify-between group rounded-lg hover:bg-slate-50 pr-2">
+                    {editingPortfolioId === p.id ? (
+                      <div className="flex-1 flex items-center p-1">
+                        <input
+                          value={editPortfolioName}
+                          onChange={(e) => setEditPortfolioName(e.target.value)}
+                          className="w-full border rounded px-1 text-sm mr-1"
                           autoFocus
-                          placeholder="Portfolio Name"
-                          className="w-full border rounded px-2 py-1 text-sm"
-                          value={newPortfolioName}
-                          onChange={(e) => setNewPortfolioName(e.target.value)}
                         />
-                        <div className="flex gap-2">
-                           <button type="submit" className="flex-1 bg-blue-600 text-white text-xs py-1 rounded">Create</button>
-                           <button onClick={() => setIsCreatingPortfolio(false)} className="flex-1 bg-slate-100 text-slate-600 text-xs py-1 rounded">Cancel</button>
-                        </div>
-                      </form>
-                   )}
-                </div>
-             </div>
-           )}
+                        <button onClick={() => handleSaveRenamePortfolio(p.id)} className="text-green-600"><Check size={14} /></button>
+                        <button onClick={() => setEditingPortfolioId(null)} className="text-red-500"><X size={14} /></button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setActivePortfolioId(p.id); setIsPortfolioDropdownOpen(false); }}
+                        className={`flex-1 text-left px-3 py-2 text-sm font-medium flex justify-between items-center ${activePortfolioId === p.id ? 'text-blue-700' : 'text-slate-700'}`}
+                      >
+                        {p.name}
+                        {activePortfolioId === p.id && <Check size={14} />}
+                      </button>
+                    )}
+
+                    {!editingPortfolioId && (
+                      <div className="hidden group-hover:flex gap-1">
+                        <button onClick={() => { setEditingPortfolioId(p.id); setEditPortfolioName(p.name); }} className="text-slate-400 hover:text-blue-600 p-1"><Edit size={12} /></button>
+                        {portfolios.length > 1 && (
+                          <button onClick={() => onDeletePortfolio && onDeletePortfolio(p.id)} className="text-slate-400 hover:text-red-600 p-1"><Trash2 size={12} /></button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="border-t border-slate-100 p-2">
+                {!isCreatingPortfolio ? (
+                  <button
+                    onClick={() => setIsCreatingPortfolio(true)}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-blue-600 font-bold hover:bg-blue-50 rounded-lg"
+                  >
+                    <Plus size={16} /> New Portfolio
+                  </button>
+                ) : (
+                  <form onSubmit={handleCreatePortfolioSubmit} className="space-y-2">
+                    <input
+                      autoFocus
+                      placeholder="Portfolio Name"
+                      className="w-full border rounded px-2 py-1 text-sm"
+                      value={newPortfolioName}
+                      onChange={(e) => setNewPortfolioName(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <button type="submit" className="flex-1 bg-blue-600 text-white text-xs py-1 rounded">Create</button>
+                      <button onClick={() => setIsCreatingPortfolio(false)} className="flex-1 bg-slate-100 text-slate-600 text-xs py-1 rounded">Cancel</button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex gap-3">
-          <button 
+          <button
             onClick={handleShare}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium"
           >
@@ -318,7 +388,7 @@ const Portfolio: React.FC<PortfolioProps> = ({
           <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-50 transition-colors text-sm font-medium">
             <Download size={16} /> Export
           </button>
-          <button 
+          <button
             onClick={handleOpenAddModal}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm shadow-blue-200 text-sm font-medium"
           >
@@ -343,28 +413,28 @@ const Portfolio: React.FC<PortfolioProps> = ({
                 <X size={24} />
               </button>
             </div>
-            
+
             {/* Mode Switcher - Only show if in ADD mode */}
             {modalMode === 'ADD' && (
               <div className="flex border-b border-slate-100">
-                 <button 
-                   onClick={() => { setImportMethod('MANUAL'); setSelectedBroker(null); setManageMode(false); }}
-                   className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-2 ${importMethod === 'MANUAL' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 bg-slate-50 hover:bg-white'}`}
-                 >
-                   <Keyboard size={16} /> Manual
-                 </button>
-                 <button 
-                   onClick={() => { setImportMethod('CSV'); setSelectedBroker(null); setManageMode(false); }}
-                   className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-2 ${importMethod === 'CSV' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 bg-slate-50 hover:bg-white'}`}
-                 >
-                   <FileSpreadsheet size={16} /> CSV Import
-                 </button>
-                 <button 
-                   onClick={() => { setImportMethod('API'); setSelectedBroker(null); setManageMode(false); }}
-                   className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-2 ${importMethod === 'API' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 bg-slate-50 hover:bg-white'}`}
-                 >
-                   <Globe size={16} /> Connect API
-                 </button>
+                <button
+                  onClick={() => { setImportMethod('MANUAL'); setSelectedBroker(null); setManageMode(false); }}
+                  className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-2 ${importMethod === 'MANUAL' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 bg-slate-50 hover:bg-white'}`}
+                >
+                  <Keyboard size={16} /> Manual
+                </button>
+                <button
+                  onClick={() => { setImportMethod('CSV'); setSelectedBroker(null); setManageMode(false); }}
+                  className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-2 ${importMethod === 'CSV' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 bg-slate-50 hover:bg-white'}`}
+                >
+                  <FileSpreadsheet size={16} /> CSV Import
+                </button>
+                <button
+                  onClick={() => { setImportMethod('API'); setSelectedBroker(null); setManageMode(false); }}
+                  className={`flex-1 py-3 text-sm font-medium flex justify-center items-center gap-2 ${importMethod === 'API' ? 'border-b-2 border-blue-600 text-blue-600 bg-white' : 'text-slate-500 bg-slate-50 hover:bg-white'}`}
+                >
+                  <Globe size={16} /> Connect API
+                </button>
               </div>
             )}
 
@@ -375,8 +445,8 @@ const Portfolio: React.FC<PortfolioProps> = ({
                     <label className="block text-sm font-medium text-slate-700 mb-1">Ticker Symbol</label>
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                      <input 
-                        type="text" 
+                      <input
+                        type="text"
                         value={ticker}
                         onChange={(e) => setTicker(e.target.value)}
                         placeholder="e.g. AAPL"
@@ -390,8 +460,8 @@ const Portfolio: React.FC<PortfolioProps> = ({
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Quantity</label>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         value={shares}
                         onChange={(e) => setShares(e.target.value)}
                         placeholder="0"
@@ -402,8 +472,8 @@ const Portfolio: React.FC<PortfolioProps> = ({
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-slate-700 mb-1">Avg. Cost / Share</label>
-                      <input 
-                        type="number" 
+                      <input
+                        type="number"
                         value={cost}
                         onChange={(e) => setCost(e.target.value)}
                         placeholder="0.00"
@@ -413,14 +483,14 @@ const Portfolio: React.FC<PortfolioProps> = ({
                       />
                     </div>
                   </div>
-                  
+
                   {/* Summary Preview */}
                   {ticker && shares && cost && (
                     <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 mt-2">
-                       <div className="flex justify-between items-center text-sm">
-                          <span className="text-slate-500">Total Investment:</span>
-                          <span className="font-bold text-slate-900">${(Number(shares) * Number(cost)).toLocaleString()}</span>
-                       </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-slate-500">Total Investment:</span>
+                        <span className="font-bold text-slate-900">${(Number(shares) * Number(cost)).toLocaleString()}</span>
+                      </div>
                     </div>
                   )}
 
@@ -434,216 +504,236 @@ const Portfolio: React.FC<PortfolioProps> = ({
 
               {importMethod === 'CSV' && (
                 <div className="text-center space-y-4 py-4">
-                  <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 hover:border-blue-500 hover:bg-blue-50 transition-all cursor-pointer">
-                     <FileSpreadsheet size={48} className="mx-auto text-slate-400 mb-3" />
-                     <p className="font-medium text-slate-700">Drag & drop your CSV file here</p>
-                     <p className="text-sm text-slate-500">Supports Trading212, Robinhood, Fidelity exports</p>
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    className={`border-2 border-dashed rounded-xl p-8 transition-all cursor-pointer relative ${isDragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-500 hover:bg-blue-50'}`}
+                  >
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={handleFileSelect}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <FileSpreadsheet size={48} className={`mx-auto mb-3 ${isDragOver ? 'text-blue-500' : 'text-slate-400'}`} />
+                    <p className="font-medium text-slate-700">{isDragOver ? "Drop CSV file here" : "Drag & drop your CSV file here"}</p>
+                    <p className="text-sm text-slate-500">Supports Trading212, Robinhood, Fidelity exports</p>
                   </div>
-                  <button className="text-blue-600 font-medium text-sm hover:underline">Download Template</button>
+                  <button onClick={handleDownloadTemplate} className="text-blue-600 font-medium text-sm hover:underline">Download Template</button>
                 </div>
               )}
 
               {importMethod === 'API' && !selectedBroker && !manageMode && (
-                 <div className="space-y-4">
-                    {!canUseApi && (
-                      <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-center gap-2 text-sm text-amber-800 mb-2">
-                         <Lock size={16} /> Upgrade to Pro to connect brokerage APIs.
-                      </div>
-                    )}
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="text-sm text-slate-500">Securely connect your brokerage account.</p>
-                      {isAdmin && (
-                        <button onClick={() => setManageMode(true)} className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1">
-                           <Edit size={12} /> Manage
-                        </button>
-                      )}
+                <div className="space-y-4">
+                  {!canUseApi && (
+                    <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-center gap-2 text-sm text-amber-800 mb-2">
+                      <Lock size={16} /> Upgrade to Pro to connect brokerage APIs.
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                       {brokerages.filter(b => b.status === 'ACTIVE' || isAdmin).map(broker => (
-                         <button 
-                           key={broker.id} 
-                           onClick={() => canUseApi && broker.status === 'ACTIVE' && handleBrokerageConnect(broker.name)} 
-                           disabled={!canUseApi || broker.status === 'MAINTENANCE'}
-                           className={`p-4 border border-slate-200 rounded-xl transition-all flex flex-col items-center gap-2 group relative 
+                  )}
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm text-slate-500">Securely connect your brokerage account.</p>
+                    {isAdmin && (
+                      <button onClick={() => setManageMode(true)} className="text-xs text-blue-600 font-medium hover:underline flex items-center gap-1">
+                        <Edit size={12} /> Manage
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {brokerages.filter(b => b.status === 'ACTIVE' || isAdmin).map(broker => (
+                      <button
+                        key={broker.id}
+                        onClick={() => canUseApi && broker.status === 'ACTIVE' && handleBrokerageConnect(broker.name)}
+                        disabled={!canUseApi || broker.status === 'MAINTENANCE'}
+                        className={`p-4 border border-slate-200 rounded-xl transition-all flex flex-col items-center gap-2 group relative 
                              ${!canUseApi || broker.status === 'MAINTENANCE' ? 'opacity-60 cursor-not-allowed bg-slate-50' : 'hover:border-blue-500 hover:shadow-md cursor-pointer'}
                            `}
-                         >
-                            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-colors ${broker.colorClass}`}>
-                               {broker.logoChar}
-                            </div>
-                            <span className="text-sm font-medium">{broker.name}</span>
-                            {broker.status === 'MAINTENANCE' && (
-                              <span className="absolute top-2 right-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">Offline</span>
-                            )}
-                         </button>
-                       ))}
-                    </div>
-                 </div>
+                      >
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg transition-colors ${broker.colorClass}`}>
+                          {broker.logoChar}
+                        </div>
+                        <span className="text-sm font-medium">{broker.name}</span>
+                        {broker.status === 'MAINTENANCE' && (
+                          <span className="absolute top-2 right-2 text-[10px] bg-red-100 text-red-600 px-1 rounded">Offline</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
 
               {/* Admin Brokerage Management inside Modal */}
               {importMethod === 'API' && manageMode && isAdmin && (
                 <div className="space-y-4">
-                   <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-bold text-slate-700">Manage Integrations</h4>
-                      <button onClick={() => setManageMode(false)} className="text-xs text-slate-500 hover:text-slate-700">Back</button>
-                   </div>
-                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                      {brokerages.map(b => (
-                        <div key={b.id} className="flex justify-between items-center p-2 border rounded-lg bg-slate-50">
-                           <div className="flex items-center gap-2">
-                             <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${b.colorClass}`}>{b.logoChar}</span>
-                             <span className="text-sm font-medium">{b.name}</span>
-                           </div>
-                           
-                           <div className="flex items-center gap-2">
-                             {/* Color Editor */}
-                             {editingBrokerId === b.id ? (
-                               <div className="flex items-center gap-1">
-                                  <input 
-                                    className="w-20 text-xs border rounded px-1"
-                                    placeholder="bg-red-100"
-                                    value={editColor}
-                                    onChange={e => setEditColor(e.target.value)}
-                                  />
-                                  <button onClick={() => handleUpdateColor(b.id, editColor)} className="text-green-600"><Check size={14} /></button>
-                                  <button onClick={() => setEditingBrokerId(null)} className="text-slate-400"><X size={14} /></button>
-                               </div>
-                             ) : (
-                               <button onClick={() => { setEditingBrokerId(b.id); setEditColor(b.colorClass); }} className="text-slate-400 hover:text-blue-600">
-                                 <Edit size={14} />
-                               </button>
-                             )}
-
-                             <button onClick={() => handleToggleBrokerStatus(b.id)} className={`text-xs px-2 py-1 rounded ${b.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                               {b.status}
-                             </button>
-                             <button onClick={() => handleDeleteBrokerage(b.id)} className="text-slate-400 hover:text-red-600 p-1">
-                               <Trash2 size={14} />
-                             </button>
-                           </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-bold text-slate-700">Manage Integrations</h4>
+                    <button onClick={() => setManageMode(false)} className="text-xs text-slate-500 hover:text-slate-700">Back</button>
+                  </div>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {brokerages.map(b => (
+                      <div key={b.id} className="flex justify-between items-center p-2 border rounded-lg bg-slate-50">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-6 h-6 flex items-center justify-center rounded text-xs font-bold ${b.colorClass}`}>{b.logoChar}</span>
+                          <span className="text-sm font-medium">{b.name}</span>
                         </div>
-                      ))}
-                   </div>
-                   <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
-                      <input 
-                        className="border rounded px-2 py-1 text-sm" 
-                        placeholder="Name" 
-                        value={newBrokerName} 
-                        onChange={e => setNewBrokerName(e.target.value)} 
-                      />
-                      <input 
-                        className="border rounded px-2 py-1 text-sm" 
-                        placeholder="Logo Char" 
-                        value={newBrokerLogo} 
-                        onChange={e => setNewBrokerLogo(e.target.value)} 
-                        maxLength={1}
-                      />
-                   </div>
-                   <button onClick={handleAddBrokerage} className="w-full bg-slate-800 text-white py-2 rounded-lg text-sm font-bold">Add Brokerage</button>
+
+                        <div className="flex items-center gap-2">
+                          {/* Color Editor */}
+                          {editingBrokerId === b.id ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                className="w-20 text-xs border rounded px-1"
+                                placeholder="bg-red-100"
+                                value={editColor}
+                                onChange={e => setEditColor(e.target.value)}
+                              />
+                              <button onClick={() => handleUpdateColor(b.id, editColor)} className="text-green-600"><Check size={14} /></button>
+                              <button onClick={() => setEditingBrokerId(null)} className="text-slate-400"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <button onClick={() => { setEditingBrokerId(b.id); setEditColor(b.colorClass); }} className="text-slate-400 hover:text-blue-600">
+                              <Edit size={14} />
+                            </button>
+                          )}
+
+                          <button onClick={() => handleToggleBrokerStatus(b.id)} className={`text-xs px-2 py-1 rounded ${b.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {b.status}
+                          </button>
+                          <button onClick={() => handleDeleteBrokerage(b.id)} className="text-slate-400 hover:text-red-600 p-1">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-2">
+                    <input
+                      className="border rounded px-2 py-1 text-sm"
+                      placeholder="Name"
+                      value={newBrokerName}
+                      onChange={e => setNewBrokerName(e.target.value)}
+                    />
+                    <input
+                      className="border rounded px-2 py-1 text-sm"
+                      placeholder="Logo Char"
+                      value={newBrokerLogo}
+                      onChange={e => setNewBrokerLogo(e.target.value)}
+                      maxLength={1}
+                    />
+                  </div>
+                  <button onClick={handleAddBrokerage} className="w-full bg-slate-800 text-white py-2 rounded-lg text-sm font-bold">Add Brokerage</button>
                 </div>
               )}
 
               {importMethod === 'API' && selectedBroker && !importResult && (
                 <div className="space-y-4 animate-fade-in">
-                   <div className="flex items-center gap-3 mb-6 p-3 bg-blue-50 rounded-lg">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-sm ${apiStep !== 'IDLE' ? 'animate-pulse' : ''} ${brokerages.find(b=>b.name===selectedBroker)?.colorClass || 'bg-white'}`}>
-                        {selectedBroker[0]}
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-bold text-slate-800">Connect {selectedBroker}</h4>
-                        <p className="text-xs text-slate-500">Read-only access required.</p>
-                      </div>
-                      <button onClick={() => setSelectedBroker(null)} disabled={apiStep !== 'IDLE'} className="text-slate-400 hover:text-slate-600 disabled:opacity-50">Change</button>
-                   </div>
+                  <div className="flex items-center gap-3 mb-6 p-3 bg-blue-50 rounded-lg">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-sm ${apiStep !== 'IDLE' ? 'animate-pulse' : ''} ${brokerages.find(b => b.name === selectedBroker)?.colorClass || 'bg-white'}`}>
+                      {selectedBroker[0]}
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-slate-800">Connect {selectedBroker}</h4>
+                      <p className="text-xs text-slate-500">Secure connection. (Simulation Mode)</p>
+                    </div>
+                    <button onClick={() => setSelectedBroker(null)} disabled={apiStep !== 'IDLE'} className="text-slate-400 hover:text-slate-600 disabled:opacity-50">Change</button>
+                  </div>
 
-                   {selectedBroker === 'Trading212' ? (
-                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">API Token</label>
+                  {selectedBroker === 'Trading212' ? (
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">API Token</label>
+                      <div className="relative">
+                        <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                        <input
+                          type="password"
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
+                          placeholder="Enter your personal API token"
+                          disabled={apiStep !== 'IDLE'}
+                        />
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1">Settings &gt; API &gt; Generate Token</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
                         <div className="relative">
                           <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                          <input 
-                            type="password" 
+                          <input
+                            type="text"
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
                             className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                            placeholder="Enter your personal API token"
+                            placeholder="Paste API Key here"
                             disabled={apiStep !== 'IDLE'}
                           />
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1">Settings &gt; API &gt; Generate Token</p>
-                     </div>
-                   ) : (
-                     <>
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">API Key</label>
-                          <div className="relative">
-                            <Key className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                            <input 
-                              type="text" 
-                              value={apiKey}
-                              onChange={(e) => setApiKey(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                              placeholder="Paste API Key here"
-                              disabled={apiStep !== 'IDLE'}
-                            />
-                          </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">API Secret</label>
+                        <div className="relative">
+                          <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                          <input
+                            type="password"
+                            value={apiSecret}
+                            onChange={(e) => setApiSecret(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
+                            placeholder="Paste API Secret here"
+                            disabled={apiStep !== 'IDLE'}
+                          />
                         </div>
-                        
-                        <div>
-                          <label className="block text-sm font-medium text-slate-700 mb-1">API Secret</label>
-                          <div className="relative">
-                            <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                            <input 
-                              type="password" 
-                              value={apiSecret}
-                              onChange={(e) => setApiSecret(e.target.value)}
-                              className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
-                              placeholder="Paste API Secret here"
-                              disabled={apiStep !== 'IDLE'}
-                            />
-                          </div>
-                        </div>
-                     </>
-                   )}
-                   
-                   <div className="pt-2">
-                     <button 
-                       onClick={submitApiConnection}
-                       disabled={apiStep !== 'IDLE' || !apiKey}
-                       className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-50"
-                     >
-                       {apiStep === 'IDLE' && <Globe size={18} />}
-                       {apiStep === 'IDLE' && 'Connect & Import'}
-                       
-                       {apiStep === 'CONNECTING' && <><Loader2 size={18} className="animate-spin"/> Authenticating...</>}
-                       {apiStep === 'FETCHING' && <><Download size={18} className="animate-bounce"/> Fetching Holdings...</>}
-                       {apiStep === 'SAVING' && <><Database size={18} className="animate-pulse"/> Saving to Database...</>}
-                       {apiStep === 'COMPLETE' && 'Complete'}
-                     </button>
-                   </div>
-                   <p className="text-xs text-center text-slate-400">Your keys are encrypted and never stored on our servers.</p>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="pt-2">
+                    <button
+                      onClick={submitApiConnection}
+                      disabled={apiStep !== 'IDLE' || !apiKey}
+                      className="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition-colors shadow-md shadow-blue-200 flex items-center justify-center gap-2 disabled:opacity-50"
+                    >
+                      {apiStep === 'IDLE' && <Globe size={18} />}
+                      {apiStep === 'IDLE' && 'Connect & Import'}
+
+                      {apiStep === 'CONNECTING' && <><Loader2 size={18} className="animate-spin" /> Authenticating...</>}
+                      {apiStep === 'FETCHING' && <><Download size={18} className="animate-bounce" /> Fetching Holdings...</>}
+                      {apiStep === 'SAVING' && <><Database size={18} className="animate-pulse" /> Saving to Database...</>}
+                      {apiStep === 'COMPLETE' && 'Complete'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-center text-slate-400">Your keys are encrypted and never stored on our servers.</p>
                 </div>
               )}
 
               {/* Import Success Screen */}
               {importResult && (
                 <div className="text-center py-6 animate-fade-in">
-                   <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
-                      <ShieldCheck size={32} />
-                   </div>
-                   <h3 className="text-xl font-bold text-slate-900 mb-2">Sync Successful!</h3>
-                   <p className="text-slate-600 mb-6">
-                     Successfully imported <span className="font-bold text-slate-900">{importResult.count}</span> holdings from {importResult.source}.
-                     <br/>
-                     <span className="text-xs text-slate-500">Data secured and stored in your private database.</span>
-                   </p>
-                   <button 
-                     onClick={() => { setIsModalOpen(false); resetForm(); }}
-                     className="bg-slate-900 text-white px-8 py-2 rounded-lg font-bold hover:bg-slate-800"
-                   >
-                     Done
-                   </button>
+                  <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-green-600">
+                    <ShieldCheck size={32} />
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900 mb-2">Sync Successful!</h3>
+                  <p className="text-slate-600 mb-6">
+                    Successfully imported <span className="font-bold text-slate-900">{importResult.count}</span> holdings from {importResult.source}.
+                    <br />
+                    <span className="text-xs text-slate-500">Data secured and stored in your private database.</span>
+                  </p>
+
+                  {importResult.errors.length > 0 && (
+                    <div className="mt-3 text-left bg-amber-50 rounded-lg p-3 border border-amber-100 mb-6">
+                      <span className="text-xs font-bold text-amber-600 block mb-1 flex items-center gap-1"><AlertTriangle size={12} /> Warnings:</span>
+                      {importResult.errors.map((err, i) => (
+                        <p key={i} className="text-xs text-slate-600 flex items-center gap-1 pl-1">• {err}</p>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setIsModalOpen(false); resetForm(); }}
+                    className="bg-slate-900 text-white px-8 py-2 rounded-lg font-bold hover:bg-slate-800"
+                  >
+                    Done
+                  </button>
                 </div>
               )}
 
@@ -656,8 +746,8 @@ const Portfolio: React.FC<PortfolioProps> = ({
         {/* Allocation Chart */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 lg:col-span-1 flex flex-col justify-center items-center">
           <div className="w-full flex justify-between items-center mb-4">
-             <h3 className="text-lg font-bold text-slate-900">Allocation</h3>
-             <span className="text-xs text-slate-500">{portfolio.holdings.length} Assets</span>
+            <h3 className="text-lg font-bold text-slate-900">Allocation</h3>
+            <span className="text-xs text-slate-500">{portfolio.holdings.length} Assets</span>
           </div>
           <div className="h-[300px] w-full relative">
             <ResponsiveContainer width="100%" height="100%">
@@ -676,16 +766,16 @@ const Portfolio: React.FC<PortfolioProps> = ({
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip 
+                <Tooltip
                   formatter={(value: number) => [`$${value.toLocaleString()}`, 'Value']}
-                  contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}} 
+                  contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                 />
               </PieChart>
             </ResponsiveContainer>
             {/* Center Text */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
-               <p className="text-slate-400 text-xs">Total</p>
-               <p className="text-slate-900 font-bold text-lg">${(portfolio.totalValue/1000).toFixed(1)}k</p>
+              <p className="text-slate-400 text-xs">Total</p>
+              <p className="text-slate-900 font-bold text-lg">${(portfolio.totalValue / 1000).toFixed(1)}k</p>
             </div>
           </div>
         </div>
@@ -693,13 +783,13 @@ const Portfolio: React.FC<PortfolioProps> = ({
         {/* Enhanced Holdings Table */}
         <div className="bg-white p-0 rounded-2xl shadow-sm border border-slate-100 lg:col-span-2 overflow-hidden flex flex-col">
           <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-             <div className="flex items-center gap-2">
-                <Briefcase size={20} className="text-slate-500" />
-                <h3 className="text-lg font-bold text-slate-900">Holdings</h3>
-             </div>
-             <button className="text-blue-600 text-sm font-medium flex items-center gap-1 hover:text-blue-700 bg-white border border-blue-200 px-3 py-1 rounded-full shadow-sm">
-               <RefreshCcw size={12} /> Rebalance
-             </button>
+            <div className="flex items-center gap-2">
+              <Briefcase size={20} className="text-slate-500" />
+              <h3 className="text-lg font-bold text-slate-900">Holdings</h3>
+            </div>
+            <button className="text-blue-600 text-sm font-medium flex items-center gap-1 hover:text-blue-700 bg-white border border-blue-200 px-3 py-1 rounded-full shadow-sm">
+              <RefreshCcw size={12} /> Rebalance
+            </button>
           </div>
           <div className="overflow-x-auto min-h-[300px]">
             <table className="w-full text-left">
@@ -719,10 +809,10 @@ const Portfolio: React.FC<PortfolioProps> = ({
                   <tr>
                     <td colSpan={7} className="text-center py-12 text-slate-400">
                       <div className="flex flex-col items-center gap-2">
-                         <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
-                            <Plus size={24} className="text-slate-300" />
-                         </div>
-                         <p>No holdings yet. Add one to get started!</p>
+                        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center">
+                          <Plus size={24} className="text-slate-300" />
+                        </div>
+                        <p>No holdings yet. Add one to get started!</p>
                       </div>
                     </td>
                   </tr>
@@ -730,22 +820,22 @@ const Portfolio: React.FC<PortfolioProps> = ({
                   portfolio.holdings.map((h, index) => {
                     const allocPercent = (h.equity / portfolio.totalValue) * 100;
                     const dayChange = (Math.random() * 2) - 1; // Mock daily change
-                    
+
                     return (
                       <tr key={h.stock.ticker} className="hover:bg-slate-50 transition-colors group relative">
                         <td className="px-6 py-4 pl-8">
                           <div className="flex items-center gap-3">
                             <div className="relative">
-                               {h.stock.logoUrl ? (
-                                 <img src={h.stock.logoUrl} alt={h.stock.ticker} className="w-10 h-10 rounded-full border border-slate-100 bg-white object-contain p-1" />
-                               ) : (
-                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm`} style={{backgroundColor: COLORS[index % COLORS.length]}}>
-                                    {h.stock.ticker.substring(0, 2)}
-                                 </div>
-                               )}
-                               <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center border border-slate-100 shadow-sm">
-                                  <div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS[index % COLORS.length]}}></div>
-                               </div>
+                              {h.stock.logoUrl ? (
+                                <img src={h.stock.logoUrl} alt={h.stock.ticker} className="w-10 h-10 rounded-full border border-slate-100 bg-white object-contain p-1" />
+                              ) : (
+                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-sm`} style={{ backgroundColor: COLORS[index % COLORS.length] }}>
+                                  {h.stock.ticker.substring(0, 2)}
+                                </div>
+                              )}
+                              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full flex items-center justify-center border border-slate-100 shadow-sm">
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                              </div>
                             </div>
                             <div>
                               <div className="font-bold text-slate-900">{h.stock.ticker}</div>
@@ -756,7 +846,7 @@ const Portfolio: React.FC<PortfolioProps> = ({
                         <td className="px-6 py-4 text-right">
                           <div className="text-slate-900 font-medium">${h.stock.price.toFixed(2)}</div>
                           <div className={`text-xs ${dayChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                             {dayChange >= 0 ? '+' : ''}{dayChange.toFixed(2)}%
+                            {dayChange >= 0 ? '+' : ''}{dayChange.toFixed(2)}%
                           </div>
                         </td>
                         <td className="px-6 py-4 text-right">
@@ -775,34 +865,34 @@ const Portfolio: React.FC<PortfolioProps> = ({
                         <td className="px-6 py-4 text-right text-slate-700 font-medium relative">
                           {allocPercent.toFixed(1)}%
                           <div className="w-full bg-slate-100 h-1.5 mt-1 rounded-full overflow-hidden">
-                             <div className="h-full rounded-full" style={{width: `${allocPercent}%`, backgroundColor: COLORS[index % COLORS.length]}}></div>
+                            <div className="h-full rounded-full" style={{ width: `${allocPercent}%`, backgroundColor: COLORS[index % COLORS.length] }}></div>
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center relative">
-                           <button 
-                             onClick={(e) => { e.stopPropagation(); setOpenActionMenuId(openActionMenuId === h.stock.ticker ? null : h.stock.ticker); }}
-                             className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
-                           >
-                             <MoreHorizontal size={16} />
-                           </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setOpenActionMenuId(openActionMenuId === h.stock.ticker ? null : h.stock.ticker); }}
+                            className="p-2 text-slate-300 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
 
-                           {/* Dropdown Menu */}
-                           {openActionMenuId === h.stock.ticker && (
-                             <div className="absolute right-8 top-10 w-32 bg-white rounded-lg shadow-xl border border-slate-100 z-50 animate-fade-in overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                                <button 
-                                  onClick={() => handleOpenEditModal(h)}
-                                  className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-2"
-                                >
-                                  <Pencil size={14} /> Edit
-                                </button>
-                                <button 
-                                  onClick={() => onDeleteHolding && onDeleteHolding(h.stock.ticker)}
-                                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                >
-                                  <Trash2 size={14} /> Remove
-                                </button>
-                             </div>
-                           )}
+                          {/* Dropdown Menu */}
+                          {openActionMenuId === h.stock.ticker && (
+                            <div className="absolute right-8 top-10 w-32 bg-white rounded-lg shadow-xl border border-slate-100 z-50 animate-fade-in overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={() => handleOpenEditModal(h)}
+                                className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-2"
+                              >
+                                <Pencil size={14} /> Edit
+                              </button>
+                              <button
+                                onClick={() => onDeleteHolding && onDeleteHolding(h.stock.ticker)}
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              >
+                                <Trash2 size={14} /> Remove
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
