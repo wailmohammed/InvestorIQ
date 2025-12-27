@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { UserProfile, PlanTier, UserRole, Brokerage, CryptoWallet, PlanConfig, Promotion } from '../types';
-import { Users, DollarSign, Activity, Search, Shield, Trash2, Edit2, CheckCircle, XCircle, Globe, Wallet, Plus, Monitor, CreditCard, Tag } from 'lucide-react';
+import { Users, DollarSign, Activity, Search, Shield, Trash2, Edit2, CheckCircle, XCircle, Globe, Wallet, Plus, Monitor, CreditCard, Tag, Download, History, Power, PowerOff } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 interface AdminDashboardProps {
@@ -32,6 +32,14 @@ const REVENUE_DATA = [
   { name: 'Apr', amount: 6100 },
   { name: 'May', amount: 7500 },
   { name: 'Jun', amount: 8200 },
+];
+
+const SYSTEM_TRANSACTIONS = [
+  { id: 'tx_sys_1', date: '2024-03-10', user: 'Sarah Smith', description: 'Elite Plan Subscription', method: 'CREDIT_CARD', amount: 25.00, status: 'COMPLETED' },
+  { id: 'tx_sys_2', date: '2024-03-09', user: 'Mike Ross', description: 'Pro Plan Subscription', method: 'PAYPAL', amount: 10.00, status: 'COMPLETED' },
+  { id: 'tx_sys_3', date: '2024-03-08', user: 'John Doe', description: 'Pro Plan Upgrade', method: 'CRYPTO', amount: 10.00, status: 'PENDING' },
+  { id: 'tx_sys_4', date: '2024-03-05', user: 'Emily White', description: 'Elite Plan Subscription', method: 'CREDIT_CARD', amount: 25.00, status: 'COMPLETED' },
+  { id: 'tx_sys_5', date: '2024-03-01', user: 'David Black', description: 'Pro Plan Subscription', method: 'PAYPAL', amount: 10.00, status: 'FAILED' },
 ];
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
@@ -70,6 +78,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleToggleStatus = (id: string) => {
     setUsers(users.map(u => u.id === id ? { ...u, status: u.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE' } : u));
+  };
+
+  const handleUpdateRole = (id: string, newRole: UserRole) => {
+    setUsers(users.map(u => u.id === id ? { ...u, role: newRole } : u));
   };
 
   const filteredUsers = users.filter(u => 
@@ -136,6 +148,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleDeletePromotion = (id: string) => {
     if (setPromotions && promotions) {
       setPromotions(promotions.filter(p => p.id !== id));
+    }
+  };
+
+  const handleTogglePromotion = (id: string) => {
+    if (setPromotions && promotions) {
+      setPromotions(promotions.map(p => p.id === id ? { ...p, active: !p.active } : p));
     }
   };
 
@@ -219,9 +237,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                          <div className="text-xs text-slate-500">{user.email}</div>
                        </td>
                        <td className="px-6 py-4">
-                         <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${user.role === UserRole.SUPER_ADMIN ? 'bg-purple-100 text-purple-800' : 'bg-slate-100 text-slate-600'}`}>
-                           {user.role}
-                         </span>
+                         <select 
+                           value={user.role} 
+                           onChange={(e) => handleUpdateRole(user.id, e.target.value as UserRole)}
+                           className="bg-slate-100 text-slate-700 text-xs font-medium px-2 py-1 rounded border-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                         >
+                            <option value={UserRole.USER}>User</option>
+                            <option value={UserRole.ADMIN}>Admin</option>
+                            <option value={UserRole.SUPER_ADMIN}>Super Admin</option>
+                         </select>
                        </td>
                        <td className="px-6 py-4">
                           <span className={`font-medium ${user.plan === PlanTier.ELITE ? 'text-amber-600' : user.plan === PlanTier.PRO ? 'text-blue-600' : 'text-slate-500'}`}>
@@ -302,62 +326,114 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {activeTab === 'PAYMENTS' && currentUser.role === UserRole.SUPER_ADMIN && (
-         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 animate-fade-in">
-            <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Wallet size={20}/> Crypto Wallets Config</h3>
-            <p className="text-slate-500 text-sm mb-6">Manage receiving addresses for crypto payments.</p>
-            
-            <div className="space-y-4">
-              {wallets.map(w => (
-                 <div key={w.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 border border-slate-200 rounded-xl bg-slate-50">
-                    <div className="flex items-start gap-4">
-                       <div className="p-3 bg-white rounded-lg border border-slate-100 shadow-sm text-slate-700">
-                          <Monitor size={20} />
-                       </div>
-                       <div>
-                          <h4 className="font-bold text-slate-800">{w.label}</h4>
-                          <p className="text-sm text-slate-500 font-mono break-all">{w.address}</p>
-                          <span className="inline-block mt-1 text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded uppercase tracking-wider font-semibold">{w.network}</span>
-                       </div>
-                    </div>
-                    <button onClick={() => handleDeleteWallet(w.id)} className="mt-3 md:mt-0 px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2">
-                       <Trash2 size={16} /> Remove
-                    </button>
-                 </div>
-              ))}
+         <div className="space-y-6 animate-fade-in">
+           {/* Wallet Configuration */}
+           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2"><Wallet size={20}/> Crypto Wallets Config</h3>
+              <p className="text-slate-500 text-sm mb-6">Manage receiving addresses for crypto payments.</p>
+              
+              <div className="space-y-4">
+                {wallets.map(w => (
+                   <div key={w.id} className="flex flex-col md:flex-row md:items-center justify-between p-4 border border-slate-200 rounded-xl bg-slate-50">
+                      <div className="flex items-start gap-4">
+                         <div className="p-3 bg-white rounded-lg border border-slate-100 shadow-sm text-slate-700">
+                            <Monitor size={20} />
+                         </div>
+                         <div>
+                            <h4 className="font-bold text-slate-800">{w.label}</h4>
+                            <p className="text-sm text-slate-500 font-mono break-all">{w.address}</p>
+                            <span className="inline-block mt-1 text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded uppercase tracking-wider font-semibold">{w.network}</span>
+                         </div>
+                      </div>
+                      <button onClick={() => handleDeleteWallet(w.id)} className="mt-3 md:mt-0 px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center gap-2">
+                         <Trash2 size={16} /> Remove
+                      </button>
+                   </div>
+                ))}
 
-              <div className="mt-6 pt-6 border-t border-slate-100">
-                 <h4 className="font-bold text-slate-700 mb-4">Add New Receiving Address</h4>
-                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                    <input 
-                      placeholder="Label (e.g. Treasury)" 
-                      className="border border-slate-200 rounded-lg px-4 py-2 text-sm"
-                      value={newWalletLabel}
-                      onChange={e => setNewWalletLabel(e.target.value)}
-                    />
-                    <select
-                      className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-white"
-                      value={newWalletNetwork}
-                      onChange={e => setNewWalletNetwork(e.target.value)}
-                    >
-                      <option value="">Select Network</option>
-                      <option value="BTC">Bitcoin (BTC)</option>
-                      <option value="ERC20">Ethereum (ERC20)</option>
-                      <option value="TRC20">Tron (TRC20)</option>
-                      <option value="XRP">Ripple (XRP)</option>
-                      <option value="DOGE">Dogecoin (DOGE)</option>
-                    </select>
-                    <input 
-                      placeholder="Wallet Address" 
-                      className="border border-slate-200 rounded-lg px-4 py-2 text-sm font-mono md:col-span-2"
-                      value={newWalletAddress}
-                      onChange={e => setNewWalletAddress(e.target.value)}
-                    />
-                 </div>
-                 <button onClick={handleAddWallet} className="bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition-colors">
-                    <Plus size={16} /> Add Wallet
+                <div className="mt-6 pt-6 border-t border-slate-100">
+                   <h4 className="font-bold text-slate-700 mb-4">Add New Receiving Address</h4>
+                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                      <input 
+                        placeholder="Label (e.g. Treasury)" 
+                        className="border border-slate-200 rounded-lg px-4 py-2 text-sm"
+                        value={newWalletLabel}
+                        onChange={e => setNewWalletLabel(e.target.value)}
+                      />
+                      <select
+                        className="border border-slate-200 rounded-lg px-4 py-2 text-sm bg-white"
+                        value={newWalletNetwork}
+                        onChange={e => setNewWalletNetwork(e.target.value)}
+                      >
+                        <option value="">Select Network</option>
+                        <option value="BTC">Bitcoin (BTC)</option>
+                        <option value="ERC20">Ethereum (ERC20)</option>
+                        <option value="TRC20">Tron (TRC20)</option>
+                        <option value="XRP">Ripple (XRP)</option>
+                        <option value="DOGE">Dogecoin (DOGE)</option>
+                      </select>
+                      <input 
+                        placeholder="Wallet Address" 
+                        className="border border-slate-200 rounded-lg px-4 py-2 text-sm font-mono md:col-span-2"
+                        value={newWalletAddress}
+                        onChange={e => setNewWalletAddress(e.target.value)}
+                      />
+                   </div>
+                   <button onClick={handleAddWallet} className="bg-slate-900 text-white px-6 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-slate-800 transition-colors">
+                      <Plus size={16} /> Add Wallet
+                   </button>
+                </div>
+              </div>
+           </div>
+
+           {/* System Transactions */}
+           <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+              <div className="flex justify-between items-center mb-6">
+                 <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2"><History size={20}/> System Transactions</h3>
+                 <button className="text-blue-600 text-sm font-medium flex items-center gap-1 hover:underline">
+                   <Download size={14} /> Export Report
                  </button>
               </div>
-            </div>
+              <div className="overflow-x-auto">
+                 <table className="w-full text-left text-sm">
+                   <thead className="bg-slate-50 text-slate-500 uppercase font-semibold text-xs">
+                     <tr>
+                       <th className="px-6 py-4">Date</th>
+                       <th className="px-6 py-4">User</th>
+                       <th className="px-6 py-4">Description</th>
+                       <th className="px-6 py-4">Method</th>
+                       <th className="px-6 py-4">Amount</th>
+                       <th className="px-6 py-4 text-right">Status</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y divide-slate-100">
+                     {SYSTEM_TRANSACTIONS.map(tx => (
+                       <tr key={tx.id} className="hover:bg-slate-50 transition-colors">
+                         <td className="px-6 py-4 text-slate-600">{tx.date}</td>
+                         <td className="px-6 py-4 font-medium text-slate-900">{tx.user}</td>
+                         <td className="px-6 py-4 text-slate-600">{tx.description}</td>
+                         <td className="px-6 py-4">
+                            <span className="inline-flex items-center gap-1 text-slate-500 bg-slate-100 px-2 py-1 rounded text-xs">
+                               {tx.method === 'CRYPTO' ? <Wallet size={10} /> : tx.method === 'PAYPAL' ? 'PP' : <CreditCard size={10}/>}
+                               {tx.method}
+                            </span>
+                         </td>
+                         <td className="px-6 py-4 font-mono">${tx.amount.toFixed(2)}</td>
+                         <td className="px-6 py-4 text-right">
+                           <span className={`px-2 py-1 rounded text-xs font-bold ${
+                             tx.status === 'COMPLETED' ? 'bg-green-50 text-green-600' : 
+                             tx.status === 'PENDING' ? 'bg-amber-50 text-amber-600' : 
+                             'bg-red-50 text-red-600'
+                           }`}>
+                             {tx.status}
+                           </span>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+              </div>
+           </div>
          </div>
       )}
 
@@ -404,14 +480,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             
             <div className="space-y-3 mb-6">
                {promotions.map(promo => (
-                 <div key={promo.id} className="flex justify-between items-center p-3 border border-slate-100 rounded-lg bg-green-50/50">
+                 <div key={promo.id} className={`flex justify-between items-center p-3 border rounded-lg transition-colors ${promo.active ? 'bg-green-50/50 border-green-100' : 'bg-slate-50 border-slate-100 opacity-70'}`}>
                     <div>
-                       <div className="font-bold text-green-700 font-mono tracking-wide">{promo.code}</div>
+                       <div className="flex items-center gap-2">
+                         <div className={`font-bold font-mono tracking-wide ${promo.active ? 'text-green-700' : 'text-slate-500 line-through'}`}>{promo.code}</div>
+                         <div className={`text-[10px] px-1.5 py-0.5 rounded uppercase font-bold ${promo.active ? 'bg-green-200 text-green-800' : 'bg-slate-200 text-slate-600'}`}>
+                           {promo.active ? 'Active' : 'Inactive'}
+                         </div>
+                       </div>
                        <div className="text-xs text-slate-500">{promo.discountPercent}% OFF • Expires {promo.expiryDate}</div>
                     </div>
-                    <button onClick={() => handleDeletePromotion(promo.id)} className="text-slate-400 hover:text-red-500">
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleTogglePromotion(promo.id)}
+                        className={`p-1.5 rounded-lg transition-colors ${promo.active ? 'text-green-600 hover:bg-green-100' : 'text-slate-400 hover:bg-slate-200'}`}
+                        title={promo.active ? "Deactivate" : "Activate"}
+                      >
+                        {promo.active ? <Power size={16} /> : <PowerOff size={16} />}
+                      </button>
+                      <button onClick={() => handleDeletePromotion(promo.id)} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                  </div>
                ))}
             </div>
